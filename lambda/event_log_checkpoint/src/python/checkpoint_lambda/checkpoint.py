@@ -47,7 +47,17 @@ def events_to_dataframe(events: List[VisitEvent]) -> DataFrame:
 
     # Convert VisitEvent objects to DataFrame using model_dump()
     data = [event.model_dump() for event in events]
-    return DataFrame(data)
+
+    # Create DataFrame and ensure it has the same schema as empty checkpoint
+    df = DataFrame(data)
+
+    # Get the expected schema from empty checkpoint
+    empty_df = create_checkpoint_dataframe()
+
+    # Ensure all columns exist and have correct types by selecting with cast
+    return df.select(
+        [col(column_name).cast(dtype) for column_name, dtype in empty_df.schema.items()]
+    )
 
 
 class Checkpoint:
@@ -76,6 +86,9 @@ class Checkpoint:
             Checkpoint instance with events converted to DataFrame
         """
         df = events_to_dataframe(events)
+        # Sort by timestamp to ensure consistent ordering
+        if not df.is_empty():
+            df = df.sort("timestamp")
         return cls(df)
 
     @classmethod
