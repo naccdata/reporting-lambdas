@@ -4,6 +4,8 @@
 
 The event log checkpoint Lambda is an AWS Lambda function that processes visit event logs from S3 storage and creates or updates a checkpoint parquet file for analytical queries. The Lambda supports incremental processing: it reads the previous checkpoint (if it exists), retrieves only new JSON event files since the last checkpoint, validates them using Pydantic models, and appends them to create an updated checkpoint file.
 
+**File Naming Pattern**: Event log files follow the pattern `log-{action}-{timestamp}-{adcid}-{project}-{ptid}-{visitnum}.json` where timestamp is in `YYYYMMDD-HHMMSS` format. The system also supports legacy files with the simpler pattern `log-{action}-{YYYYMMDD}.json` for backward compatibility. See `context/docs/event-log-format.md` for detailed examples of the actual file structure used by the NACC Flywheel logging system.
+
 The system follows a pipeline architecture: load previous checkpoint → retrieve new events → validate → merge → write. This incremental approach significantly improves performance by avoiding reprocessing of historical events. Each stage handles errors gracefully to ensure partial failures don't prevent processing of valid data.
 
 The Lambda is implemented as `checkpoint_lambda` in the `lambda/event_log_checkpoint/` directory following NACC project structure patterns.
@@ -402,7 +404,7 @@ The NACC Flywheel logging system often creates multiple event files for the same
 ```
 Timeline for visit ptid=ABC123, visit_date=2024-01-15, visit_number=01:
 
-T1: log-submit-20240115.json
+T1: log-submit-20240115-100000-42-ingest-form-alpha-ABC123-01.json
 {
   "action": "submit",
   "ptid": "ABC123",
@@ -413,7 +415,7 @@ T1: log-submit-20240115.json
   "packet": null         // Not yet determined
 }
 
-T2: log-submit-20240115.json (updated file)
+T2: log-submit-20240115-100000-42-ingest-form-alpha-ABC123-01.json (updated file)
 {
   "action": "submit",
   "ptid": "ABC123", 
@@ -424,7 +426,7 @@ T2: log-submit-20240115.json (updated file)
   "packet": "I"          // Now determined
 }
 
-T3: log-pass-qc-20240115.json
+T3: log-pass-qc-20240115-103000-42-ingest-form-alpha-ABC123-01.json
 {
   "action": "pass-qc",
   "ptid": "ABC123",
@@ -566,7 +568,7 @@ schema = {
 
 ### Property 1: File pattern matching correctness
 
-*For any* S3 bucket and environment prefix combination, the list_event_files function should return only files matching the pattern `log-{action}-{YYYYMMDD-HHMMSS}-{adcid}-{project}-{ptid}-{visitnum}.json` where action is one of (submit, pass-qc, not-pass-qc, delete), timestamp is in format YYYYMMDD-HHMMSS, and other components are valid identifiers.
+*For any* S3 bucket and environment prefix combination, the list_event_files function should return only files matching the pattern `log-{action}-{timestamp}-{adcid}-{project}-{ptid}-{visitnum}.json` where action is one of (submit, pass-qc, not-pass-qc, delete), timestamp is in format YYYYMMDD-HHMMSS, and other components are valid identifiers.
 **Validates: Requirements 1.1**
 
 ### Property 2: JSON retrieval completeness

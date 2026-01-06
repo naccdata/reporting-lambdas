@@ -27,7 +27,7 @@ The Lambda will be built using Python 3.12, AWS Lambda Powertools for observabil
 
 #### Acceptance Criteria
 
-1. WHEN the Lambda is invoked with an S3 bucket name and optional path prefix THEN the Lambda SHALL list all JSON files matching the pattern log-{action}-{YYYYMMDD}.json
+1. WHEN the Lambda is invoked with an S3 bucket name and optional path prefix THEN the Lambda SHALL list all JSON files matching the pattern log-{action}-{timestamp}-{adcid}-{project}-{ptid}-{visitnum}.json where timestamp is in YYYYMMDD-HHMMSS format
 2. WHEN the Lambda retrieves a file from S3 THEN the Lambda SHALL read the complete file content as JSON
 3. WHEN the Lambda encounters an S3 access error THEN the Lambda SHALL log the error with the file path and continue processing remaining files
 4. WHEN the Lambda completes file retrieval THEN the Lambda SHALL return a collection of all successfully retrieved event objects
