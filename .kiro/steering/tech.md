@@ -160,6 +160,18 @@ The project uses a multi-layer approach for optimal performance:
 
 # Run specific test file
 ./bin/exec-in-devcontainer.sh pants test lambda/event_log_checkpoint/test/python/test_lambda_function.py
+
+# Run specific test method (use -- to pass pytest arguments)
+./bin/exec-in-devcontainer.sh pants test lambda/event_log_checkpoint/test/python/test_s3_retriever.py -- -k test_json_retrieval_completeness
+
+# Run specific test class
+./bin/exec-in-devcontainer.sh pants test lambda/event_log_checkpoint/test/python/test_s3_retriever.py -- -k TestS3EventRetrieverPropertyTests
+
+# Run tests with verbose output
+./bin/exec-in-devcontainer.sh pants test lambda/event_log_checkpoint/test/python/test_s3_retriever.py -- -v
+
+# Run tests with specific pytest options (combine as needed)
+./bin/exec-in-devcontainer.sh pants test lambda/event_log_checkpoint/test/python/test_s3_retriever.py -- -k test_method_name -v -s
 ```
 
 ### Infrastructure Deployment
