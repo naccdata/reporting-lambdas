@@ -43,8 +43,8 @@ We have successfully updated the spec documents to reflect the simplified archit
 ### Next Steps
 
 The next major tasks are:
-- Task 10-15: Implement S3EventRetriever with direct validation
-- Task 16-21: Complete Checkpoint class implementation and tests
+- Task 10-15: Complete Checkpoint class implementation and tests
+- Task 16-21: Implement S3EventRetriever with direct validation
 - Task 22-27: Implement Lambda handler with simplified pipeline
 
 ## Tasks
@@ -111,7 +111,42 @@ The next major tasks are:
   - ✅ Combined functionality of previous CheckpointReader + ParquetWriter
   - _Requirements: 1.1, 4.1, 4.2, 4.5, 7.4_
 
-- [ ] 10. Write unit tests for S3EventRetriever component
+- [x] 10. Write unit tests for Checkpoint class
+  - Create test file `lambda/event_log_checkpoint/test/python/test_checkpoint.py`
+  - Write unit tests for from_events class method
+  - Write unit tests for empty class method
+  - Write unit tests for get_last_processed_timestamp with various DataFrames
+  - Write unit tests for add_events method with merging logic (includes previous CheckpointMerger functionality)
+  - Write unit tests for utility methods (get_event_count, is_empty, dataframe property)
+  - _Requirements: 4.1, 4.2, 7.1, 7.2, 7.3, 7.4_
+
+- [x] 11. Write property test for incremental checkpoint correctness
+  - **Property 0: Incremental checkpoint correctness**
+  - **Validates: Requirements 4.1, 7.1**
+
+- [x] 12. Write property test for event evolution preservation
+  - **Property 15: Event evolution preservation**
+  - **Validates: Requirements 7.1, 7.3, 7.4**
+
+- [x] 13. Write property test for timestamp ordering
+  - **Property 16: Timestamp ordering**
+  - **Validates: Requirements 7.2, 7.4**
+
+- [x] 14. Write property test for event completeness analysis
+  - **Property 17: Event completeness analysis**
+  - **Validates: Requirements 7.5, 7.6**
+
+- [x] 15. Implement Checkpoint class to pass tests
+  - Create Checkpoint class in `lambda/event_log_checkpoint/src/python/checkpoint_lambda/checkpoint.py`
+  - Implement from_events class method to create checkpoint from VisitEvent list
+  - Implement empty class method to create empty checkpoint
+  - Implement get_last_processed_timestamp to extract max timestamp
+  - Implement add_events method to merge new events with existing (includes CheckpointMerger logic)
+  - Implement utility methods (get_event_count, is_empty, dataframe property)
+  - Run tests to ensure all pass
+  - _Requirements: 4.1, 4.2, 7.1, 7.2, 7.3, 7.4_
+
+- [ ] 16. Write unit tests for S3EventRetriever component
   - Create test file `lambda/event_log_checkpoint/test/python/test_s3_retriever.py`
   - Write unit tests for list_event_files with various S3 scenarios
   - Write unit tests for retrieve_event with valid/invalid JSON
@@ -121,23 +156,23 @@ The next major tasks are:
   - Mock S3 operations for isolated testing
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4, 6.1, 6.2, 6.3, 10.3_
 
-- [ ] 11. Write property test for file pattern matching
+- [ ] 17. Write property test for file pattern matching
   - **Property 1: File pattern matching correctness**
   - **Validates: Requirements 1.1**
 
-- [ ] 12. Write property test for JSON retrieval
+- [ ] 18. Write property test for JSON retrieval
   - **Property 2: JSON retrieval completeness**
   - **Validates: Requirements 1.2**
 
-- [ ] 13. Write property test for timestamp filtering
+- [ ] 19. Write property test for timestamp filtering
   - **Property 3: Timestamp filtering correctness**
   - **Validates: Requirements 1.1, 7.4**
 
-- [ ] 14. Write property test for error resilience
+- [ ] 20. Write property test for error resilience
   - **Property 4: Error resilience in retrieval**
   - **Validates: Requirements 1.3, 1.4**
 
-- [ ] 15. Implement S3EventRetriever component to pass tests
+- [ ] 21. Implement S3EventRetriever component to pass tests
   - Create S3EventRetriever class in `lambda/event_log_checkpoint/src/python/checkpoint_lambda/s3_retriever.py`
   - Implement list_event_files to list files matching log-{action}-{YYYYMMDD}.json pattern
   - Implement retrieve_event to fetch and parse JSON from S3
@@ -146,40 +181,6 @@ The next major tasks are:
   - Add error handling for S3 access errors with logging
   - Run tests to ensure all pass
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4, 6.1, 6.2, 6.3, 10.3_
-- [ ] 16. Write unit tests for Checkpoint class
-  - Create test file `lambda/event_log_checkpoint/test/python/test_checkpoint.py`
-  - Write unit tests for from_events class method
-  - Write unit tests for empty class method
-  - Write unit tests for get_last_processed_timestamp with various DataFrames
-  - Write unit tests for add_events method with merging logic (includes previous CheckpointMerger functionality)
-  - Write unit tests for utility methods (get_event_count, is_empty, dataframe property)
-  - _Requirements: 4.1, 4.2, 7.1, 7.2, 7.3, 7.4_
-
-- [ ] 17. Write property test for incremental checkpoint correctness
-  - **Property 0: Incremental checkpoint correctness**
-  - **Validates: Requirements 4.1, 7.1**
-
-- [ ] 18. Write property test for event evolution preservation
-  - **Property 15: Event evolution preservation**
-  - **Validates: Requirements 7.1, 7.3, 7.4**
-
-- [ ] 19. Write property test for timestamp ordering
-  - **Property 16: Timestamp ordering**
-  - **Validates: Requirements 7.2, 7.4**
-
-- [ ] 20. Write property test for event completeness analysis
-  - **Property 17: Event completeness analysis**
-  - **Validates: Requirements 7.5, 7.6**
-
-- [ ] 21. Implement Checkpoint class to pass tests
-  - Create Checkpoint class in `lambda/event_log_checkpoint/src/python/checkpoint_lambda/checkpoint.py`
-  - Implement from_events class method to create checkpoint from VisitEvent list
-  - Implement empty class method to create empty checkpoint
-  - Implement get_last_processed_timestamp to extract max timestamp
-  - Implement add_events method to merge new events with existing (includes CheckpointMerger logic)
-  - Implement utility methods (get_event_count, is_empty, dataframe property)
-  - Run tests to ensure all pass
-  - _Requirements: 4.1, 4.2, 7.1, 7.2, 7.3, 7.4_
 - [ ] 22. Write property test for parquet round-trip
   - **Property 9: Parquet round-trip**
   - **Validates: Requirements 4.2**
