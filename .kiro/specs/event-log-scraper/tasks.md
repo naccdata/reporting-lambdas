@@ -32,7 +32,7 @@ All development should be done using the established dev container workflow:
   - ✅ Dev container environment with helper scripts in `bin/` directory
   - _Requirements: 8.1, 8.2, 8.4, 8.5, 9.1, 9.2, 9.3, 9.4, 9.5_
 
-- [-] 1.1 Update BUILD file with additional Lambda layers
+- [x] 1.1 Update BUILD file with additional Lambda layers
   - Add `data_processing` layer for Pydantic and Polars dependencies
   - Note: AWS Powertools already includes boto3, so no separate aws_sdk layer needed
   - Ensure layers are properly separated by concern

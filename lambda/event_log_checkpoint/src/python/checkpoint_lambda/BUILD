@@ -13,3 +13,13 @@ python_aws_lambda_layer(
     dependencies=["//:root#aws-lambda-powertools"],
     include_sources=False,
 )
+
+python_aws_lambda_layer(
+    name="data_processing",
+    runtime="python3.12",
+    dependencies=[
+        "//:root#pydantic",
+        "//:root#polars",
+    ],
+    include_sources=False,
+)
