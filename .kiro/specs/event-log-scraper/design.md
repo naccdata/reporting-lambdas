@@ -18,32 +18,34 @@ The Lambda is implemented as `checkpoint_lambda` in the `lambda/event_log_checkp
 │ (Event Logs)│         │ (Checkpoint)│
 └──────┬──────┘         └──────┬──────┘
        │                       │
-       │ List & Read New       │ Read Previous
+       │ List & Read New       │ Read/Write
        │                       │
        ▼                       ▼
 ┌──────────────────────────────────────────┐
 │         AWS Lambda Function              │
 │                                          │
 │  ┌────────────────┐  ┌──────────────┐  │
-│  │Checkpoint      │  │  S3 Client   │  │
-│  │Reader          │  │              │  │
-│  └────────┬───────┘  └──────┬───────┘  │
+│  │CheckpointStore │  │S3EventRetriever│ │
+│  │(load/save)     │  │(retrieve &   │  │
+│  └────────┬───────┘  │ validate)    │  │
+│           │          └──────┬───────┘  │
 │           │                  │           │
 │           │                  ▼           │
 │           │          ┌──────────────┐  │
-│           │          │  Validator   │  │
-│           │          │  (Pydantic)  │  │
+│           │          │ VisitEvent   │  │
+│           │          │ (validation) │  │
 │           │          └──────┬───────┘  │
 │           │                  │           │
 │           ▼                  ▼           │
 │        ┌──────────────────────────┐    │
-│        │   Checkpoint Merger      │    │
-│        │ (Append new to existing) │    │
+│        │   Checkpoint.add_events  │    │
+│        │ (merge new with existing)│    │
 │        └──────────┬───────────────┘    │
 │                   │                     │
 │                   ▼                     │
 │            ┌──────────────┐            │
-│            │Parquet Writer│            │
+│            │CheckpointStore│           │
+│            │.save()       │            │
 │            └──────┬───────┘            │
 └───────────────────┼────────────────────┘
                     │
@@ -57,11 +59,10 @@ The Lambda is implemented as `checkpoint_lambda` in the `lambda/event_log_checkp
 
 ### Component Responsibilities
 
-1. **Checkpoint Reader**: Reads the previous checkpoint parquet file and extracts the latest timestamp
-2. **S3 Client**: Handles all S3 operations (list, read, write) with filtering for new events
-3. **Validator**: Validates event logs using Pydantic models
-4. **Checkpoint Merger**: Combines previous checkpoint data with newly validated events
-5. **Parquet Writer**: Converts merged events to parquet format and writes to S3
+1. **Checkpoint**: Encapsulates checkpoint data and provides operations for working with event collections, including merging new events
+2. **CheckpointStore**: Handles reading and writing checkpoints to/from S3 storage (combines previous CheckpointReader + ParquetWriter functionality)
+3. **S3EventRetriever**: Handles S3 operations for event log retrieval and validation using VisitEvent Pydantic model directly
+4. **Lambda Handler**: Orchestrates the incremental pipeline
 
 ### Technology Stack
 
@@ -105,53 +106,163 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
             - events_failed: Count of failed events
             - last_processed_timestamp: Latest timestamp in checkpoint
             - execution_time_ms: Total execution time
+            
+    Workflow:
+        1. CheckpointStore loads previous checkpoint (or None if first run)
+        2. Get last processed timestamp for incremental processing
+        3. S3EventRetriever retrieves and validates new events since last timestamp
+        4. Checkpoint.add_events() merges previous checkpoint with new events
+        5. CheckpointStore saves updated checkpoint to S3
+        6. Return processing summary
     """
 ```
 
-### 2. CheckpointReader
+### 2. Checkpoint
 
-**Purpose**: Reads previous checkpoint and determines what new events to process
+**Purpose**: Data model that encapsulates checkpoint event data and provides operations
 
 **Interface**:
 
 ```python
 import polars as pl
+from typing import List, Optional
+from datetime import datetime
 
-class CheckpointReader:
-    def __init__(self, bucket: str, key: str):
-        """Initialize with S3 checkpoint location."""
-        
-    def checkpoint_exists(self) -> bool:
+class Checkpoint:
+    def __init__(self, events_df: Optional[pl.DataFrame] = None):
         """
-        Check if a previous checkpoint exists.
+        Initialize checkpoint with event data.
+        
+        Args:
+            events_df: DataFrame containing event data, None for empty checkpoint
+        """
+        
+    @classmethod
+    def from_events(cls, events: List[VisitEvent]) -> 'Checkpoint':
+        """
+        Create checkpoint from list of VisitEvent objects.
+        
+        Args:
+            events: List of validated events
+            
+        Returns:
+            Checkpoint instance with events converted to DataFrame
+        """
+        
+    @classmethod
+    def empty(cls) -> 'Checkpoint':
+        """
+        Create an empty checkpoint.
+        
+        Returns:
+            Empty checkpoint instance
+        """
+        
+    def get_last_processed_timestamp(self) -> Optional[datetime]:
+        """
+        Get the latest timestamp from checkpoint events.
+        
+        Returns:
+            Latest timestamp, or None if checkpoint is empty
+        """
+        
+    def add_events(self, new_events: List[VisitEvent]) -> 'Checkpoint':
+        """
+        Create new checkpoint with additional events merged in.
+        
+        This method handles the merging logic internally:
+        - Converts new events to DataFrame
+        - Merges with existing events
+        - Sorts by timestamp
+        - Returns new Checkpoint instance
+        
+        Args:
+            new_events: List of new validated events to add
+            
+        Returns:
+            New checkpoint instance with merged events, sorted by timestamp
+        """
+        
+    def get_event_count(self) -> int:
+        """
+        Get total number of events in checkpoint.
+        
+        Returns:
+            Number of events
+        """
+        
+    def is_empty(self) -> bool:
+        """
+        Check if checkpoint contains any events.
+        
+        Returns:
+            True if checkpoint is empty
+        """
+        
+    @property
+    def dataframe(self) -> pl.DataFrame:
+        """
+        Get underlying DataFrame for operations that absolutely need direct access.
+        
+        Note: This should be used sparingly. Prefer adding methods to Checkpoint
+        for common operations rather than exposing the implementation.
+        
+        Returns:
+            Polars DataFrame containing event data
+        """
+```
+
+### 3. CheckpointStore
+
+**Purpose**: Handles reading and writing checkpoints to/from S3 storage
+
+**Interface**:
+
+```python
+class CheckpointStore:
+    def __init__(self, bucket: str, key: str):
+        """
+        Initialize with S3 checkpoint location.
+        
+        Args:
+            bucket: S3 bucket name
+            key: S3 key for checkpoint file
+        """
+        
+    def exists(self) -> bool:
+        """
+        Check if a checkpoint exists in S3.
         
         Returns:
             True if checkpoint file exists in S3
         """
         
-    def read_checkpoint(self) -> Optional[pl.DataFrame]:
+    def load(self) -> Optional[Checkpoint]:
         """
-        Read the previous checkpoint parquet file.
+        Load checkpoint from S3.
         
         Returns:
-            DataFrame containing previous events, or None if no checkpoint exists
+            Checkpoint object containing previous events, or None if no checkpoint exists
+            
+        Raises:
+            CheckpointCorruptedError: If checkpoint file exists but is corrupted
         """
         
-    def get_last_processed_timestamp(self, df: pl.DataFrame) -> Optional[datetime]:
+    def save(self, checkpoint: Checkpoint) -> str:
         """
-        Extract the latest timestamp from the checkpoint.
+        Save checkpoint to S3 as parquet file.
         
         Args:
-            df: DataFrame from previous checkpoint
+            checkpoint: Checkpoint object to save
             
         Returns:
-            Latest timestamp value, or None if DataFrame is empty
+            S3 URI of written checkpoint file (s3://bucket/key)
         """
 ```
 
-### 3. S3EventRetriever
+### 4. S3EventRetriever
 
-**Purpose**: Retrieves event log files from S3, with filtering for incremental processing
+**Purpose**: Retrieves event log files from S3, with filtering for incremental processing and validation using VisitEvent Pydantic model directly
 
 **Interface**:
 
@@ -167,38 +278,27 @@ class S3EventRetriever:
             since_timestamp: Only retrieve events with timestamp > this value
         """
         
-    def list_event_files(self) -> List[str]:
+    def retrieve_and_validate_events(self) -> tuple[List[VisitEvent], List[dict]]:
         """
-        List all event log JSON files in the S3 location.
+        Retrieve all new event files, validate them, and return results.
+        
+        This method handles the complete retrieval and validation pipeline:
+        - Lists event files matching the pattern
+        - Retrieves and parses JSON from each file
+        - Filters by timestamp if since_timestamp is set
+        - Validates each event using VisitEvent Pydantic model directly
+        - Collects validation errors for logging
         
         Returns:
-            List of S3 keys matching event log naming pattern
-        """
-        
-    def retrieve_event(self, key: str) -> Optional[dict]:
-        """
-        Retrieve and parse a single event log file.
-        
-        Args:
-            key: S3 key of the event file
-            
-        Returns:
-            Parsed JSON dict or None if retrieval fails
-        """
-        
-    def should_process_event(self, event_data: dict) -> bool:
-        """
-        Determine if an event should be processed based on timestamp.
-        
-        Args:
-            event_data: Parsed event dictionary
-            
-        Returns:
-            True if event timestamp is after since_timestamp (or if no cutoff set)
+            Tuple of (valid_events, validation_errors)
+            - valid_events: List of successfully validated VisitEvent objects
+            - validation_errors: List of error dicts with keys:
+                - source_key: S3 key of failed event
+                - errors: Pydantic validation errors
         """
 ```
 
-### 4. VisitEvent Model
+### 5. VisitEvent Model
 
 **Purpose**: Pydantic model for event validation and parsing
 
@@ -218,116 +318,22 @@ class VisitEvent(BaseModel):
     project_label: str = Field(min_length=1)
     center_label: str = Field(min_length=1)
     gear_name: str = Field(min_length=1)
-    ptid: str = Field(pattern=r"^[A-Z0-9]+$", max_length=10)
-    visit_date: date
-    visit_number: str = Field(min_length=1)
-    datatype: str = Field(min_length=1)
-    module: Optional[str] = None
-    packet: Optional[str] = None
+    ptid: str = Field(pattern=r"^[!-~]{1,10}$", max_length=10)
+    visit_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    visit_number: Optional[str] = Field(default=None)
+    datatype: Literal["apoe", "biomarker", "dicom", "enrollment", "form", 
+                     "genetic-availability", "gwas", "imputation", "scan-analysis"]
+    module: Optional[Literal["UDS", "FTLD", "LBD", "MDS"]] = Field(default=None)
+    packet: Optional[str] = Field(default=None)
     timestamp: datetime
     
-    @field_validator('visit_date', mode='before')
-    @classmethod
-    def parse_visit_date(cls, v):
-        """Parse visit_date from ISO string."""
+    @model_validator(mode='after')
+    def validate_module(self) -> Self:
+        """Validate module field based on datatype.
         
-    @field_validator('timestamp', mode='before')
-    @classmethod
-    def parse_timestamp(cls, v):
-        """Parse timestamp from ISO 8601 string."""
-```
-
-### 5. EventValidator
-
-**Purpose**: Validates events using Pydantic and handles validation errors
-
-**Interface**:
-
-```python
-class EventValidator:
-    def validate_event(self, event_data: dict, source_key: str) -> Optional[VisitEvent]:
-        """
-        Validate an event using Pydantic model.
-        
-        Args:
-            event_data: Raw event dictionary
-            source_key: S3 key for error logging
-            
-        Returns:
-            Validated VisitEvent or None if validation fails
-        """
-        
-    def get_validation_errors(self) -> List[dict]:
-        """
-        Get all validation errors encountered.
-        
-        Returns:
-            List of error dictionaries with keys:
-                - source_key: S3 key of failed event
-                - errors: Pydantic validation errors
-        """
-```
-
-### 6. CheckpointMerger
-
-**Purpose**: Merges previous checkpoint data with newly validated events
-
-**Interface**:
-
-```python
-import polars as pl
-
-class CheckpointMerger:
-    def merge(
-        self, 
-        previous_df: Optional[pl.DataFrame], 
-        new_events: List[VisitEvent]
-    ) -> pl.DataFrame:
-        """
-        Merge previous checkpoint with new events.
-        
-        Args:
-            previous_df: DataFrame from previous checkpoint (None if first run)
-            new_events: List of newly validated events
-            
-        Returns:
-            Merged DataFrame with all events, sorted by timestamp
-        """
-        
-    def events_to_dataframe(self, events: List[VisitEvent]) -> pl.DataFrame:
-        """
-        Convert list of VisitEvent objects to Polars DataFrame.
-        
-        Args:
-            events: List of validated events
-            
-        Returns:
-            DataFrame with proper column types for parquet
-        """
-```
-
-### 7. ParquetWriter
-
-**Purpose**: Writes events to parquet file and uploads to S3
-
-**Interface**:
-
-```python
-import polars as pl
-
-class ParquetWriter:
-    def __init__(self, output_bucket: str, output_key: str):
-        """Initialize with S3 output location."""
-        
-    def write_events(self, df: pl.DataFrame) -> str:
-        """
-        Write DataFrame to parquet and upload to S3.
-        
-        Args:
-            df: DataFrame containing event data
-            
-        Returns:
-            S3 URI of written parquet file (s3://bucket/key)
+        Rules:
+        - If datatype != "form" and module is not None: raise error
+        - If datatype == "form" and module is None: raise error
         """
 ```
 
@@ -335,29 +341,25 @@ class ParquetWriter:
 
 ### First Run (No Previous Checkpoint)
 
-1. Check if checkpoint exists at S3 location → No
-2. Set `since_timestamp` to None (process all events)
-3. List and retrieve all event log files from S3
-4. Validate all events
-5. Create DataFrame from valid events
-6. Write parquet file to checkpoint location
-7. Return summary with total events processed
+1. CheckpointStore checks if checkpoint exists at S3 location → No
+2. CheckpointStore.load() returns None
+3. Set `since_timestamp` to None (process all events)
+4. S3EventRetriever retrieves and validates all event log files from S3 using VisitEvent model directly
+5. Create empty checkpoint: `checkpoint = Checkpoint.empty()`
+6. Add validated events: `updated_checkpoint = checkpoint.add_events(valid_events)`
+7. CheckpointStore saves updated checkpoint to S3
+8. Return summary with total events processed
 
 ### Subsequent Runs (Checkpoint Exists)
 
-1. Check if checkpoint exists at S3 location → Yes
-2. Read previous checkpoint parquet file
-3. Extract maximum timestamp from checkpoint → `last_timestamp`
+1. CheckpointStore checks if checkpoint exists at S3 location → Yes
+2. CheckpointStore.load() returns previous Checkpoint object
+3. Extract maximum timestamp: `last_timestamp = checkpoint.get_last_processed_timestamp()`
 4. Set `since_timestamp` to `last_timestamp`
-5. List all event log files from S3
-6. For each file, retrieve and check if event timestamp > `last_timestamp`
-7. Only process events newer than `last_timestamp`
-8. Validate new events
-9. Create DataFrame from new valid events
-10. Merge previous checkpoint DataFrame with new events DataFrame
-11. Sort merged DataFrame by timestamp
-12. Write merged parquet file to checkpoint location (overwrites previous)
-13. Return summary with new events processed and total events
+5. S3EventRetriever retrieves and validates only new event files (timestamp > last_timestamp) using VisitEvent model directly
+6. Add new events to checkpoint: `updated_checkpoint = checkpoint.add_events(new_valid_events)`
+7. CheckpointStore saves updated checkpoint to S3 (overwrites previous)
+8. Return summary with new events processed and total events
 
 ### Timestamp Filtering Logic
 
@@ -516,12 +518,12 @@ The VisitEvent model represents a single visit event with the following fields:
 | project_label | str | Yes | min_length=1 | Flywheel project label |
 | center_label | str | Yes | min_length=1 | Center/group label |
 | gear_name | str | Yes | min_length=1 | Gear that logged the event |
-| ptid | str | Yes | Pattern: ^[A-Z0-9]+$, max_length=10 | Participant ID |
-| visit_date | date | Yes | ISO format YYYY-MM-DD | Visit date |
-| visit_number | str | Yes | min_length=1 | Visit number |
-| datatype | str | Yes | min_length=1 | Data type (form, dicom, etc.) |
-| module | str | No | - | Module name (UDS, FTLD, etc.) |
-| packet | str | No | - | Packet type (I, F, etc.) |
+| ptid | str | Yes | Pattern: ^[!-~]{1,10}$, max_length=10 | Participant ID (printable non-whitespace) |
+| visit_date | str | Yes | Pattern: ^\d{4}-\d{2}-\d{2}$ | Visit date in ISO format YYYY-MM-DD |
+| visit_number | str | No | - | Visit number (optional) |
+| datatype | str | Yes | Enum: apoe, biomarker, dicom, enrollment, form, genetic-availability, gwas, imputation, scan-analysis | Data type |
+| module | str | No | Enum: UDS, FTLD, LBD, MDS (required if datatype=form, must be null otherwise) | Module name |
+| packet | str | No | - | Packet type (optional) |
 | timestamp | datetime | Yes | ISO 8601 | When action occurred |
 
 ### Parquet Schema
@@ -541,7 +543,7 @@ schema = {
     'center_label': pl.Utf8,
     'gear_name': pl.Utf8,
     'ptid': pl.Utf8,
-    'visit_date': pl.Date,
+    'visit_date': pl.Utf8,  # String format YYYY-MM-DD
     'visit_number': pl.Utf8,
     'datatype': pl.Utf8,
     'module': pl.Utf8,
@@ -584,8 +586,8 @@ schema = {
 
 ### Property 5: Validation enforcement
 
-*For any* event data dictionary, the validator should apply all schema constraints including required fields, type checking, pattern matching for ptid, enum validation for action, study field validation with default value, and date format validation.
-**Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9**
+*For any* event data dictionary, the validator should apply all schema constraints including required fields, type checking, pattern matching for ptid (printable non-whitespace characters), enum validation for action and datatype, study field validation with default value, visit_date string format validation, and module validation rules based on datatype.
+**Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 2.10, 2.11, 2.12, 2.13**
 
 ### Property 6: Type conversion correctness
 
@@ -594,7 +596,7 @@ schema = {
 
 ### Property 7: Null preservation
 
-*For any* event with null values in optional fields (module, packet), parsing should preserve those null values in the VisitEvent object.
+*For any* event with null values in optional fields (visit_number, module, packet), parsing should preserve those null values in the VisitEvent object.
 **Validates: Requirements 3.3**
 
 ### Property 8: Serialization round-trip
@@ -604,7 +606,7 @@ schema = {
 
 ### Property 9: Parquet round-trip
 
-*For any* collection of VisitEvent objects, writing to parquet and reading back should preserve all fields with correct data types (strings as strings, integers as integers, dates as dates, timestamps as timestamps).
+*For any* collection of VisitEvent objects, writing to parquet and reading back should preserve all fields with correct data types (strings as strings, integers as integers, visit_date as string, timestamps as timestamps).
 **Validates: Requirements 4.2**
 
 ### Property 10: Output path correctness
@@ -619,7 +621,7 @@ schema = {
 
 ### Property 12: Temporal calculation support
 
-*For any* event in the checkpoint file with action "submit" or "pass-qc", the system should support calculating the time difference in days between visit_date and timestamp without data loss or type errors.
+*For any* event in the checkpoint file with action "submit" or "pass-qc", the system should support calculating the time difference in days between visit_date (string format YYYY-MM-DD) and timestamp without data loss or type errors.
 **Validates: Requirements 5.3, 5.4**
 
 ### Property 13: Aggregation correctness
@@ -786,7 +788,7 @@ The deployment uses a multi-layer approach for optimal performance and maintaina
 
 #### Layer 1: AWS Lambda Powertools (`powertools`)
 
-- **Contents**: AWS Lambda Powertools library
+- **Contents**: AWS Lambda Powertools library (includes boto3)
 - **Size**: ~5MB
 - **Update Frequency**: Low (only when Powertools version changes)
 - **Reusability**: High (can be shared across multiple Lambda functions)
@@ -797,13 +799,6 @@ The deployment uses a multi-layer approach for optimal performance and maintaina
 - **Size**: ~15-20MB
 - **Update Frequency**: Medium (when data processing libraries update)
 - **Reusability**: High (useful for any data processing Lambda)
-
-#### Layer 3: AWS SDK (`aws_sdk`)
-
-- **Contents**: Boto3 and botocore
-- **Size**: ~10-15MB
-- **Update Frequency**: Medium (when AWS SDK updates)
-- **Reusability**: Very High (needed by most AWS Lambda functions)
 
 #### Lambda Function Package
 
@@ -820,7 +815,6 @@ The deployment uses a multi-layer approach for optimal performance and maintaina
 # Build layers and function
 ./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:powertools
 ./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:data_processing
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:aws_sdk
 ./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:lambda
 
 # Deploy with automatic layer reuse (from lambda directory)
@@ -842,7 +836,6 @@ The deployment uses a multi-layer approach for optimal performance and maintaina
 # When you need to update layers regardless of existing versions
 ./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:powertools
 ./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:data_processing
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:aws_sdk
 ./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:lambda
 ./bin/exec-in-devcontainer.sh bash -c "cd lambda/event_log_checkpoint && terraform apply -var='force_layer_update=true' -var='reuse_existing_layers=false'"
 ```
@@ -933,14 +926,6 @@ python_aws_lambda_layer(
     ],
     include_sources=False,
 )
-
-# AWS SDK layer (if needed separately)
-python_aws_lambda_layer(
-    name="aws_sdk",
-    runtime="python3.12",
-    dependencies=["//:root#boto3"],
-    include_sources=False,
-)
 ```
 
 ### Layer Architecture Benefits
@@ -963,12 +948,6 @@ data "aws_lambda_layer_version" "powertools" {
 
 data "aws_lambda_layer_version" "data_processing" {
   layer_name = "event-log-checkpoint-data-processing"
-  
-  count = var.reuse_existing_layers ? 1 : 0
-}
-
-data "aws_lambda_layer_version" "aws_sdk" {
-  layer_name = "event-log-checkpoint-aws-sdk"
   
   count = var.reuse_existing_layers ? 1 : 0
 }
@@ -1004,21 +983,6 @@ resource "aws_lambda_layer_version" "data_processing" {
   }
 }
 
-resource "aws_lambda_layer_version" "aws_sdk" {
-  count = var.reuse_existing_layers && length(data.aws_lambda_layer_version.aws_sdk) > 0 ? 0 : 1
-  
-  filename         = "aws_sdk_layer.zip"
-  layer_name       = "event-log-checkpoint-aws-sdk"
-  source_code_hash = filebase64sha256("aws_sdk_layer.zip")
-  
-  compatible_runtimes = ["python3.12"]
-  description         = "AWS SDK (Boto3) layer"
-  
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
 # Local values to determine which layer ARNs to use
 locals {
   powertools_layer_arn = var.reuse_existing_layers && length(data.aws_lambda_layer_version.powertools) > 0 ? 
@@ -1028,10 +992,6 @@ locals {
   data_processing_layer_arn = var.reuse_existing_layers && length(data.aws_lambda_layer_version.data_processing) > 0 ? 
     data.aws_lambda_layer_version.data_processing[0].arn : 
     aws_lambda_layer_version.data_processing[0].arn
-    
-  aws_sdk_layer_arn = var.reuse_existing_layers && length(data.aws_lambda_layer_version.aws_sdk) > 0 ? 
-    data.aws_lambda_layer_version.aws_sdk[0].arn : 
-    aws_lambda_layer_version.aws_sdk[0].arn
 }
 
 resource "aws_lambda_function" "event_log_checkpoint" {
@@ -1049,7 +1009,6 @@ resource "aws_lambda_function" "event_log_checkpoint" {
   layers = [
     local.powertools_layer_arn,
     local.data_processing_layer_arn,
-    local.aws_sdk_layer_arn,
   ]
   
   environment {
@@ -1235,17 +1194,11 @@ output "data_processing_layer_arn" {
   value       = var.use_external_layer_arns ? null : local.data_processing_layer_arn
 }
 
-output "aws_sdk_layer_arn" {
-  description = "ARN of the AWS SDK layer"
-  value       = var.use_external_layer_arns ? null : local.aws_sdk_layer_arn
-}
-
 output "all_layer_arns" {
   description = "All layer ARNs used by the Lambda function"
   value = var.use_external_layer_arns ? var.external_layer_arns : [
     local.powertools_layer_arn,
     local.data_processing_layer_arn,
-    local.aws_sdk_layer_arn,
   ]
 }
 ```

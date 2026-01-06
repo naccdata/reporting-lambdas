@@ -42,11 +42,15 @@ The Lambda will be built using Python 3.12, AWS Lambda Powertools for observabil
 2. WHEN an event log contains all required fields with valid types THEN the Lambda SHALL mark the event as valid
 3. WHEN an event log is missing required fields THEN the Lambda SHALL mark the event as invalid and log the validation error
 4. WHEN an event log contains invalid field values THEN the Lambda SHALL mark the event as invalid and log the specific validation failures
-5. WHEN the Lambda validates the ptid field THEN the Lambda SHALL verify it matches the pattern `^[A-Z0-9]+$` and has maximum length of 10 characters
+5. WHEN the Lambda validates the ptid field THEN the Lambda SHALL verify it matches the pattern for printable non-whitespace characters and has maximum length of 10 characters
 6. WHEN the Lambda validates the action field THEN the Lambda SHALL verify it is one of: submit, pass-qc, not-pass-qc, or delete
 7. WHEN the Lambda validates the study field THEN the Lambda SHALL verify it is a non-empty string with default value adrc
-8. WHEN the Lambda validates the visit_date field THEN the Lambda SHALL verify it matches ISO date format YYYY-MM-DD
+8. WHEN the Lambda validates the visit_date field THEN the Lambda SHALL verify it matches ISO date format YYYY-MM-DD as a string
 9. WHEN the Lambda validates the timestamp field THEN the Lambda SHALL verify it is a valid ISO 8601 datetime string
+10. WHEN the Lambda validates the datatype field THEN the Lambda SHALL verify it is one of: apoe, biomarker, dicom, enrollment, form, genetic-availability, gwas, imputation, or scan-analysis
+11. WHEN the Lambda validates the module field for form datatype THEN the Lambda SHALL require module to be one of: UDS, FTLD, LBD, or MDS
+12. WHEN the Lambda validates the module field for non-form datatype THEN the Lambda SHALL require module to be null
+13. WHEN the Lambda validates the visit_number field THEN the Lambda SHALL treat it as optional and allow null values
 
 ### Requirement 3
 
