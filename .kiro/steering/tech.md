@@ -60,6 +60,49 @@ Pants is used for all builds, testing, linting, and packaging in this Lambda pro
   - Indent: 4 spaces
   - Selected rules: A, B, E, W, F, I, RUF, SIM, C90, PLW0406, COM818, SLF001
 
+### Preventing E501 Line Length Errors in Tests
+
+**CRITICAL**: When writing tests, avoid E501 line length violations (lines > 88 characters) by using these patterns:
+
+**❌ Avoid long strings inline:**
+```python
+test_files = [
+    "log-submit-20240115-100000-42-ingest-form-alpha-110001-01.json",  # E501 error!
+    "log-pass-qc-20240115-102000-42-ingest-form-alpha-110001-01.json",  # E501 error!
+]
+```
+
+**✅ Use constants for long test data:**
+```python
+# At top of test file
+SUBMIT_FULL_LOG = (
+    "log-submit-20240115-100000-42-ingest-form-alpha-110001-01.json"
+)
+PASS_QC_FULL_LOG = (
+    "log-pass-qc-20240115-102000-42-ingest-form-alpha-110001-01.json"
+)
+
+# In test methods
+test_files = [
+    SUBMIT_FULL_LOG,
+    PASS_QC_FULL_LOG,
+]
+```
+
+**✅ Alternative: Use string concatenation for very long strings:**
+```python
+long_filename = (
+    "log-submit-20240115-100000-42-ingest-form-"
+    "alpha-110001-01.json"
+)
+```
+
+**Benefits:**
+- No E501 linting errors
+- Reusable test data across multiple test methods
+- Easier to maintain and update test data
+- Cleaner, more readable test code
+
 ### Type Checking
 
 - **mypy** with Pydantic plugin
