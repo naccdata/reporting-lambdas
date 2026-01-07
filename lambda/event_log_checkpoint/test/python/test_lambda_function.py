@@ -438,7 +438,10 @@ class TestLambdaHandlerFirstRunScenario:
     def test_first_run_with_no_valid_events_no_checkpoint_created(
         self, s3_client, setup_s3_environment
     ):
-        """Test first run scenario with no valid events - no checkpoint should be created."""
+        """Test first run scenario with no valid events.
+
+        - no checkpoint should be created.
+        """
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
         # Create test buckets
@@ -712,9 +715,11 @@ class TestLambdaHandlerIncrementalRunScenario:
         )
         checkpoint_store.save(existing_checkpoint)
 
-        # Create event files in S3 - some before and some after the last checkpoint timestamp
+        # Create event files in S3 - some before and some after the last
+        #  checkpoint timestamp
         event_files = [
-            # This event is BEFORE the last checkpoint timestamp - should be filtered out
+            # This event is BEFORE the last checkpoint timestamp
+            #  - should be filtered out
             {
                 "key": create_s3_log_key(
                     "logs/2024/",
@@ -971,7 +976,8 @@ class TestLambdaHandlerIncrementalRunScenario:
         # Verify checkpoint still exists and can be loaded
         final_checkpoint = checkpoint_store.load()
         assert final_checkpoint is not None
-        # Now has original 3 events + 2 new events = 5 total (implementation working correctly)
+        # Now has original 3 events + 2 new events = 5 total
+        # (implementation working correctly)
         assert final_checkpoint.get_event_count() == 5
 
         # Note: Processing metrics are now logged instead of returned in response
@@ -1016,7 +1022,7 @@ class TestLambdaHandlerIncrementalRunScenario:
         checkpoint_store = CheckpointStore(
             checkpoint_bucket, "checkpoints/events.parquet"
         )
-        original_s3_uri = checkpoint_store.save(existing_checkpoint)
+        _original_s3_uri = checkpoint_store.save(existing_checkpoint)
 
         # Get the original checkpoint's last modified time for comparison
         original_response = s3_client.head_object(
@@ -1137,6 +1143,661 @@ class TestLambdaHandlerIncrementalRunScenario:
         final_checkpoint = checkpoint_store.load()
         assert final_checkpoint is not None
         assert final_checkpoint.get_event_count() == 1
+
+
+class TestLambdaHandlerErrorHandling:
+    """Unit tests for Lambda handler error handling scenarios."""
+
+    def test_s3_permission_error_source_bucket(self, s3_client, setup_s3_environment):
+        """Test Lambda handler behavior with S3 permission errors on source
+        bucket."""
+        from unittest.mock import Mock, patch
+
+        from botocore.exceptions import ClientError
+
+        # Create test buckets
+        checkpoint_bucket = "test-checkpoint-bucket-permission"
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Setup test event with non-existent source bucket (simulates permission error)
+        test_event = {
+            "source_bucket": "non-existent-source-bucket",
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Mock S3EventRetriever to raise ClientError (permission denied)
+        with patch(
+            "checkpoint_lambda.lambda_function.S3EventRetriever"
+        ) as mock_retriever_class:
+            mock_retriever = Mock()
+            mock_retriever.retrieve_and_validate_events.side_effect = ClientError(
+                error_response={
+                    "Error": {"Code": "AccessDenied", "Message": "Access Denied"}
+                },
+                operation_name="ListObjects",
+            )
+            mock_retriever_class.return_value = mock_retriever
+
+            # Call handler
+            response = lambda_handler(test_event, mock_context)
+
+            # Verify error response format
+            assert isinstance(response, dict)
+            assert response["statusCode"] == 500
+            assert response["error"] == "InternalServerError"
+            assert "message" in response
+            assert (
+                "Access Denied" in response["message"]
+                or "AccessDenied" in response["message"]
+            )
+
+    def test_s3_permission_error_checkpoint_bucket(
+        self, s3_client, setup_s3_environment
+    ):
+        """Test Lambda handler behavior with S3 permission errors on checkpoint
+        bucket."""
+        from unittest.mock import Mock, patch
+
+        from botocore.exceptions import ClientError
+
+        # Create test buckets
+        source_bucket = "test-source-bucket-permission"
+        s3_client.create_bucket(Bucket=source_bucket)
+
+        # Setup test event with non-existent checkpoint bucket
+        # (simulates permission error)
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": "non-existent-checkpoint-bucket",
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Mock CheckpointStore to raise ClientError (permission denied)
+        with patch(
+            "checkpoint_lambda.lambda_function.CheckpointStore"
+        ) as mock_store_class:
+            mock_store = Mock()
+            mock_store.get_checkpoint.side_effect = ClientError(
+                error_response={
+                    "Error": {"Code": "AccessDenied", "Message": "Access Denied"}
+                },
+                operation_name="HeadObject",
+            )
+            mock_store_class.return_value = mock_store
+
+            # Call handler
+            response = lambda_handler(test_event, mock_context)
+
+            # Verify error response format
+            assert isinstance(response, dict)
+            assert response["statusCode"] == 500
+            assert response["error"] == "InternalServerError"
+            assert "message" in response
+            assert (
+                "Access Denied" in response["message"]
+                or "AccessDenied" in response["message"]
+            )
+
+    def test_invalid_json_handling_with_valid_files(
+        self, s3_client, setup_s3_environment
+    ):
+        """Test Lambda handler with mix of invalid JSON and valid files."""
+        # Create test buckets
+        source_bucket = "test-event-logs-invalid-json"
+        checkpoint_bucket = "test-checkpoint-invalid-json"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Create mix of valid and invalid JSON files
+        event_files = [
+            # Valid event file
+            {
+                "key": create_s3_log_key(
+                    "logs/",
+                    "submit",
+                    "20240115-100000",
+                    42,
+                    "ingest-form-alpha",
+                    "110001",
+                    "01",
+                ),
+                "content": {
+                    "action": "submit",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "form-processor",
+                    "ptid": "110001",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "I",
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+            # Invalid JSON file (malformed)
+            {
+                "key": "logs/malformed-1.json",
+                "content": "{ invalid json content without closing brace",
+            },
+            # Another invalid JSON file (incomplete)
+            {
+                "key": "logs/malformed-2.json",
+                "content": '{"action": "submit", "incomplete":',
+            },
+            # Valid event file
+            {
+                "key": create_s3_log_key(
+                    "logs/",
+                    "pass-qc",
+                    "20240115-102000",
+                    42,
+                    "ingest-form-alpha",
+                    "110001",
+                    "01",
+                ),
+                "content": {
+                    "action": "pass-qc",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "qc-processor",
+                    "ptid": "110001",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "I",
+                    "timestamp": "2024-01-15T10:20:00Z",
+                },
+            },
+        ]
+
+        # Upload event files to S3
+        for event_file in event_files:
+            content = event_file["content"]
+            if isinstance(content, dict):
+                content = json.dumps(content)
+            s3_client.put_object(
+                Bucket=source_bucket, Key=event_file["key"], Body=content
+            )
+
+        # Setup test event
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Call handler - should succeed despite invalid JSON files
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify success response (partial failure handling)
+        assert isinstance(response, dict)
+        assert response["statusCode"] == 200
+
+        # Verify checkpoint was created with valid events only
+        from checkpoint_lambda.checkpoint_store import CheckpointStore
+
+        checkpoint_store = CheckpointStore(
+            checkpoint_bucket, "checkpoints/events.parquet"
+        )
+        assert checkpoint_store.exists()
+
+        final_checkpoint = checkpoint_store.load()
+        assert final_checkpoint is not None
+        # Should have 2 valid events (invalid JSON files should be skipped)
+        assert final_checkpoint.get_event_count() == 2
+
+    def test_invalid_event_schema_handling(self, s3_client, setup_s3_environment):
+        """Test Lambda handler with invalid event schemas."""
+        # Create test buckets
+        source_bucket = "test-event-logs-invalid-schema"
+        checkpoint_bucket = "test-checkpoint-invalid-schema"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Create mix of valid and invalid schema files
+        event_files = [
+            # Valid event file
+            {
+                "key": create_s3_log_key(
+                    "logs/",
+                    "submit",
+                    "20240115-100000",
+                    42,
+                    "ingest-form-alpha",
+                    "110001",
+                    "01",
+                ),
+                "content": {
+                    "action": "submit",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "form-processor",
+                    "ptid": "110001",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "I",
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+            # Invalid action field
+            {
+                "key": "logs/invalid-action.json",
+                "content": {
+                    "action": "invalid-action-type",  # Invalid action
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "form-processor",
+                    "ptid": "110002",
+                    "visit_date": "2024-01-15",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+            # Missing required fields
+            {
+                "key": "logs/missing-fields.json",
+                "content": {
+                    "action": "submit",
+                    "study": "adrc",
+                    # Missing pipeline_adcid, project_label, etc.
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+            # Invalid ptid pattern
+            {
+                "key": "logs/invalid-ptid.json",
+                "content": {
+                    "action": "submit",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "form-processor",
+                    "ptid": "invalid ptid with spaces",  # Invalid ptid pattern
+                    "visit_date": "2024-01-15",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+        ]
+
+        # Upload event files to S3
+        for event_file in event_files:
+            s3_client.put_object(
+                Bucket=source_bucket,
+                Key=event_file["key"],
+                Body=json.dumps(event_file["content"]),
+            )
+
+        # Setup test event
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Call handler - should succeed despite invalid schemas
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify success response (partial failure handling)
+        assert isinstance(response, dict)
+        assert response["statusCode"] == 200
+
+        # Verify checkpoint was created with valid events only
+        from checkpoint_lambda.checkpoint_store import CheckpointStore
+
+        checkpoint_store = CheckpointStore(
+            checkpoint_bucket, "checkpoints/events.parquet"
+        )
+        assert checkpoint_store.exists()
+
+        final_checkpoint = checkpoint_store.load()
+        assert final_checkpoint is not None
+        # Should have 1 valid event (invalid schema files should be skipped)
+        assert final_checkpoint.get_event_count() == 1
+
+    def test_mixed_valid_invalid_files_comprehensive(
+        self, s3_client, setup_s3_environment
+    ):
+        """Test Lambda handler with comprehensive mix of valid and invalid
+        files."""
+        # Create test buckets
+        source_bucket = "test-event-logs-mixed-comprehensive"
+        checkpoint_bucket = "test-checkpoint-mixed-comprehensive"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Create comprehensive mix of files
+        event_files = [
+            # Valid event 1
+            {
+                "key": create_s3_log_key(
+                    "logs/",
+                    "submit",
+                    "20240115-100000",
+                    42,
+                    "ingest-form-alpha",
+                    "110001",
+                    "01",
+                ),
+                "content": {
+                    "action": "submit",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "form-processor",
+                    "ptid": "110001",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "I",
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+            # Malformed JSON
+            {
+                "key": "logs/malformed.json",
+                "content": "{ malformed json without closing",
+            },
+            # Valid event 2
+            {
+                "key": create_s3_log_key(
+                    "logs/",
+                    "pass-qc",
+                    "20240115-102000",
+                    42,
+                    "ingest-form-alpha",
+                    "110001",
+                    "01",
+                ),
+                "content": {
+                    "action": "pass-qc",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "qc-processor",
+                    "ptid": "110001",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "I",
+                    "timestamp": "2024-01-15T10:20:00Z",
+                },
+            },
+            # Invalid schema (bad action)
+            {
+                "key": "logs/invalid-schema.json",
+                "content": {
+                    "action": "bad-action",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "form-processor",
+                    "ptid": "110002",
+                    "visit_date": "2024-01-15",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+            # Valid event 3
+            {
+                "key": create_s3_log_key(
+                    "logs/",
+                    "delete",
+                    "20240115-103000",
+                    43,
+                    "ingest-form-beta",
+                    "110003",
+                    "01",
+                ),
+                "content": {
+                    "action": "delete",
+                    "study": "adrc",
+                    "pipeline_adcid": 43,
+                    "project_label": "ingest-form-beta",
+                    "center_label": "test-center-2",
+                    "gear_name": "delete-processor",
+                    "ptid": "110003",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "FTLD",
+                    "packet": "F",
+                    "timestamp": "2024-01-15T10:30:00Z",
+                },
+            },
+        ]
+
+        # Upload event files to S3
+        for event_file in event_files:
+            content = event_file["content"]
+            if isinstance(content, dict):
+                content = json.dumps(content)
+            s3_client.put_object(
+                Bucket=source_bucket, Key=event_file["key"], Body=content
+            )
+
+        # Setup test event
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Call handler - should succeed with partial failures
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify success response (partial failure handling)
+        assert isinstance(response, dict)
+        assert response["statusCode"] == 200
+
+        # Verify checkpoint was created with valid events only
+        from checkpoint_lambda.checkpoint_store import CheckpointStore
+
+        checkpoint_store = CheckpointStore(
+            checkpoint_bucket, "checkpoints/events.parquet"
+        )
+        assert checkpoint_store.exists()
+
+        final_checkpoint = checkpoint_store.load()
+        assert final_checkpoint is not None
+        # Should have 3 valid events (2 invalid files should be skipped)
+        assert final_checkpoint.get_event_count() == 3
+
+    def test_error_response_format_validation_error(self, setup_s3_environment):
+        """Test error response format for validation errors."""
+        mock_context = Mock(spec=LambdaContext)
+
+        # Test with missing required parameters
+        test_event = {
+            "source_bucket": "test-bucket",
+            # Missing checkpoint_bucket and checkpoint_key
+        }
+
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify error response format
+        assert isinstance(response, dict)
+        assert response["statusCode"] == 400
+        assert response["error"] == "ValidationError"
+        assert "message" in response
+        assert "checkpoint_bucket" in response["message"]
+        assert "checkpoint_key" in response["message"]
+
+    def test_error_response_format_missing_source_bucket(self, setup_s3_environment):
+        """Test error response format for missing source bucket."""
+        mock_context = Mock(spec=LambdaContext)
+
+        # Test with missing source_bucket
+        test_event = {
+            "checkpoint_bucket": "test-checkpoint-bucket",
+            "checkpoint_key": "checkpoints/events.parquet",
+            # Missing source_bucket
+        }
+
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify error response format
+        assert isinstance(response, dict)
+        assert response["statusCode"] == 400
+        assert response["error"] == "ValidationError"
+        assert "message" in response
+        assert "source_bucket" in response["message"]
+
+    def test_error_response_format_internal_server_error(
+        self, s3_client, setup_s3_environment
+    ):
+        """Test error response format for internal server errors."""
+        from unittest.mock import Mock, patch
+
+        # Create test buckets
+        source_bucket = "test-source-bucket-internal-error"
+        checkpoint_bucket = "test-checkpoint-bucket-internal-error"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Mock CheckpointStore to raise unexpected exception
+        with patch(
+            "checkpoint_lambda.lambda_function.CheckpointStore"
+        ) as mock_store_class:
+            mock_store = Mock()
+            mock_store.get_checkpoint.side_effect = RuntimeError(
+                "Unexpected error occurred"
+            )
+            mock_store_class.return_value = mock_store
+
+            response = lambda_handler(test_event, mock_context)
+
+            # Verify error response format
+            assert isinstance(response, dict)
+            assert response["statusCode"] == 500
+            assert response["error"] == "InternalServerError"
+            assert "message" in response
+            assert "Unexpected error occurred" in response["message"]
+
+    def test_error_logging_with_file_paths(self, s3_client, setup_s3_environment):
+        """Test that errors are logged with file paths for debugging."""
+        from unittest.mock import patch
+
+        # Create test buckets
+        source_bucket = "test-event-logs-error-logging"
+        checkpoint_bucket = "test-checkpoint-error-logging"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Create files with various error conditions that match the expected pattern
+        event_files = [
+            # Malformed JSON with proper filename pattern
+            {
+                "key": create_s3_log_key(
+                    "logs/",
+                    "submit",
+                    "20240115-100000",
+                    42,
+                    "ingest-form-alpha",
+                    "110001",
+                    "01",
+                ),
+                "content": "{ invalid json without closing brace",
+            },
+            # Invalid schema with proper filename pattern
+            {
+                "key": create_s3_log_key(
+                    "logs/",
+                    "pass-qc",
+                    "20240115-102000",
+                    42,
+                    "ingest-form-alpha",
+                    "110002",
+                    "01",
+                ),
+                "content": {
+                    "action": "invalid-action-type",  # This will cause validation error
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "form-processor",
+                    "ptid": "110002",
+                    "visit_date": "2024-01-15",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "timestamp": "2024-01-15T10:20:00Z",
+                },
+            },
+        ]
+
+        # Upload event files to S3
+        for event_file in event_files:
+            content = event_file["content"]
+            if isinstance(content, dict):
+                content = json.dumps(content)
+            s3_client.put_object(
+                Bucket=source_bucket, Key=event_file["key"], Body=content
+            )
+
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Patch logger to capture log calls
+        with patch("checkpoint_lambda.lambda_function.logger") as mock_logger:
+            response = lambda_handler(test_event, mock_context)
+
+            # Verify response is successful (partial failure handling)
+            assert isinstance(response, dict)
+            assert response["statusCode"] == 200
+
+            # Verify that warning was logged for validation errors
+            mock_logger.warning.assert_called()
+            warning_call = mock_logger.warning.call_args
+            assert "Validation errors encountered" in warning_call[0][0]
+            assert "error_count" in warning_call[1]["extra"]
+            # Should have 2 validation errors (malformed JSON + invalid schema)
+            assert warning_call[1]["extra"]["error_count"] == 2
 
 
 class TestLambdaHandlerEndToEndIntegration:
