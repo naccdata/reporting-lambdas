@@ -7,7 +7,7 @@ and error handling scenarios.
 
 import json
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 import pytest
@@ -784,8 +784,9 @@ class TestS3EventRetrieverPropertyTests:
     )
     @settings(max_examples=10, deadline=None)  # Disable deadline for performance
     def test_json_retrieval_completeness(self, bucket_name, s3_key, event_data):
-        """Property test: For any valid VisitEvent JSON file in S3, the retrieve_event
-        function should successfully parse and return a valid VisitEvent object.
+        """Property test: For any valid VisitEvent JSON file in S3, the
+        retrieve_event function should successfully parse and return a valid
+        VisitEvent object.
 
         This test validates Requirements 1.2: WHEN the Lambda retrieves
         a file from S3 THEN the Lambda SHALL read the complete file
