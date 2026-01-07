@@ -80,6 +80,20 @@ def _update_checkpoint(  # noqa: C901
     # Retrieve and validate new events
     try:
         valid_events, validation_errors = event_retriever.retrieve_and_validate_events()
+
+        # Log file processing counts with structured context (Requirement 11.2)
+        total_files_processed = len(valid_events) + len(validation_errors)
+        logger.info(
+            "File processing completed",
+            extra={
+                "files_retrieved": total_files_processed,
+                "files_processed_successfully": len(valid_events),
+                "files_failed": len(validation_errors),
+                "source_bucket": source_bucket,
+                "prefix": prefix,
+            },
+        )
+
     except ClientError as e:
         execution_time_ms = int((time.time() - start_time) * 1000)
         error_code = e.response.get("Error", {}).get("Code", "Unknown")
@@ -99,17 +113,29 @@ def _update_checkpoint(  # noqa: C901
             "message": error_msg,
         }
 
-    # Log validation errors if any
+    # Log validation errors if any (Enhanced requirement 11.3)
     if validation_errors:
         # Log individual validation errors for debugging first
         for error in validation_errors:
             logger.warning(
-                f"Validation error in file {error['source_key']}: {error['errors']}"
+                f"Validation error in file {error['source_key']}: {error['errors']}",
+                extra={
+                    "source_key": error["source_key"],
+                    "error_details": error["errors"],
+                    "error_type": "validation_error",
+                },
             )
-        # Then log summary
+        # Then log summary with structured context
         logger.warning(
-            "Validation errors encountered",
-            extra={"error_count": len(validation_errors)},
+            "Validation errors encountered during processing",
+            extra={
+                "error_count": len(validation_errors),
+                "total_files_processed": len(valid_events) + len(validation_errors),
+                "success_rate": len(valid_events)
+                / (len(valid_events) + len(validation_errors))
+                if (len(valid_events) + len(validation_errors)) > 0
+                else 0,
+            },
         )
 
     # Determine if we need to save a checkpoint
@@ -122,8 +148,16 @@ def _update_checkpoint(  # noqa: C901
         if not updated_checkpoint.is_empty():
             try:
                 checkpoint_path = checkpoint_store.save(updated_checkpoint)
+                # Enhanced structured logging for checkpoint path (Requirement 11.2)
                 logger.info(
-                    "Checkpoint saved", extra={"checkpoint_path": checkpoint_path}
+                    "Checkpoint saved successfully",
+                    extra={
+                        "checkpoint_path": checkpoint_path,
+                        "checkpoint_bucket": checkpoint_bucket,
+                        "checkpoint_key": checkpoint_key,
+                        "events_in_checkpoint": updated_checkpoint.get_event_count(),
+                        "new_events_added": len(valid_events),
+                    },
                 )
             except CheckpointError as e:
                 execution_time_ms = int((time.time() - start_time) * 1000)
@@ -160,13 +194,44 @@ def _update_checkpoint(  # noqa: C901
         # For incremental run with no new events, don't overwrite existing checkpoint
         pass
 
-    # Emit CloudWatch metrics for processing statistics
+    # Emit enhanced CloudWatch metrics for detailed processing statistics
+    # (Requirement 11.7)
+    total_files_processed = len(valid_events) + len(validation_errors)
+    metrics.add_metric(name="FilesRetrieved", unit="Count", value=total_files_processed)
+    metrics.add_metric(
+        name="FilesProcessedSuccessfully", unit="Count", value=len(valid_events)
+    )
     metrics.add_metric(name="EventsProcessed", unit="Count", value=len(valid_events))
     metrics.add_metric(name="EventsFailed", unit="Count", value=len(validation_errors))
+
+    if total_files_processed > 0:
+        success_rate = len(valid_events) / total_files_processed
+        metrics.add_metric(
+            name="ProcessingSuccessRate", unit="Percent", value=success_rate * 100
+        )
+
     if valid_events:
         metrics.add_metric(
-            name="TotalEvents", unit="Count", value=updated_checkpoint.get_event_count()
+            name="TotalEventsInCheckpoint",
+            unit="Count",
+            value=updated_checkpoint.get_event_count(),
         )
+
+    # Log processing summary with structured context
+    logger.info(
+        "Event processing completed successfully",
+        extra={
+            "processing_summary": {
+                "files_retrieved": total_files_processed,
+                "files_processed_successfully": len(valid_events),
+                "files_failed": len(validation_errors),
+                "events_processed": len(valid_events),
+                "total_events_in_checkpoint": updated_checkpoint.get_event_count(),
+                "checkpoint_updated": len(valid_events) > 0
+                and not updated_checkpoint.is_empty(),
+            }
+        },
+    )
 
     # Return success response
     return {"statusCode": 200}
@@ -193,6 +258,22 @@ def lambda_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, A
             - message: Error message (only present on failure)
     """
     start_time = time.time()
+
+    # Log invocation parameters using Lambda Powertools Logger (Requirement 11.1)
+    logger.info(
+        "Lambda execution started",
+        extra={
+            "invocation_parameters": {
+                "source_bucket": event.get("source_bucket"),
+                "checkpoint_bucket": event.get("checkpoint_bucket"),
+                "checkpoint_key": event.get("checkpoint_key"),
+                "prefix": event.get("prefix", ""),
+            },
+            "lambda_request_id": context.aws_request_id,
+            "function_name": context.function_name,
+            "function_version": context.function_version,
+        },
+    )
 
     # Parse Lambda event parameters
     source_bucket = event.get("source_bucket")
@@ -244,8 +325,20 @@ def lambda_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, A
 
     # If response indicates an error, return it directly
     if response["statusCode"] == 200:
-        # Calculate execution time and emit CloudWatch metrics
+        # Calculate execution time and emit CloudWatch metrics (Requirement 11.4, 11.7)
         execution_time_ms = int((time.time() - start_time) * 1000)
+
+        # Log execution completion with structured context
+        logger.info(
+            "Lambda execution completed successfully",
+            extra={
+                "execution_time_ms": execution_time_ms,
+                "source_bucket": source_bucket,
+                "checkpoint_bucket": checkpoint_bucket,
+                "checkpoint_key": checkpoint_key,
+                "prefix": prefix,
+            },
+        )
 
         # Emit CloudWatch metrics (but don't return them in response)
         # Note: Metrics will be emitted by the metrics decorator
