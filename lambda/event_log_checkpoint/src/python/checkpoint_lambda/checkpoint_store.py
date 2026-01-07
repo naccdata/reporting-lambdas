@@ -82,6 +82,14 @@ class CheckpointStore:
             # S3-specific errors (permissions, network, etc.)
             raise CheckpointError(f"S3 error loading checkpoint: {e}") from e
 
+    def get_checkpoint(self) -> Checkpoint:
+        """Returns the checkpoint for this store if one exists, and, if not,
+        returns an empty checkpoint."""
+        checkpoint = self.load()
+        if checkpoint is None:
+            return Checkpoint.empty()
+        return checkpoint
+
     def save(self, checkpoint: Checkpoint) -> str:
         """Save checkpoint to S3 as parquet file.
 
