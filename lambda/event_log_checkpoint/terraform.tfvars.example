@@ -1,0 +1,49 @@
+# Example Terraform variables file for Event Log Checkpoint Lambda
+# Copy this file to terraform.tfvars and customize the values
+
+# Required: S3 buckets
+source_bucket     = "your-event-logs-bucket"
+checkpoint_bucket = "your-checkpoint-bucket"
+
+# Optional: Checkpoint configuration
+checkpoint_key = "checkpoints/events.parquet"
+environment    = "dev"
+log_level      = "INFO"
+
+# Optional: Layer management (choose one strategy)
+
+# Strategy 1: Automatic layer reuse (recommended for most cases)
+reuse_existing_layers   = true
+use_external_layer_arns = false
+force_layer_update      = false
+
+# Strategy 2: Use external layer ARNs (for cross-project reuse)
+# reuse_existing_layers   = false
+# use_external_layer_arns = true
+# external_layer_arns = [
+#   "arn:aws:lambda:us-east-1:123456789012:layer:powertools:1",
+#   "arn:aws:lambda:us-east-1:123456789012:layer:data-processing:2"
+# ]
+
+# Strategy 3: Force layer updates (for development)
+# reuse_existing_layers = false
+# use_external_layer_arns = false
+# force_layer_update = true
+
+# Optional: Lambda configuration
+lambda_timeout     = 900  # 15 minutes
+lambda_memory_size = 3008 # 3GB
+log_retention_days = 30
+
+# Optional: Monitoring
+# alarm_sns_topic_arn = "arn:aws:sns:us-east-1:123456789012:alerts"
+
+# Optional: Event log filtering
+# event_log_prefix = "logs/2024/"
+
+# Optional: Additional tags
+additional_tags = {
+  Owner       = "data-engineering"
+  CostCenter  = "analytics"
+  Application = "event-log-processing"
+}
