@@ -45,14 +45,14 @@ class CheckpointStore:
             True if checkpoint file exists in S3
 
         Raises:
-            CheckpointError: For S3 access errors other than NoSuchKey
+            CheckpointError: For S3 access errors other than NoSuchKey or NoSuchBucket
         """
         try:
             self.s3_client.head_object(Bucket=self.bucket, Key=self.key)
             return True
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
-            if error_code == "NoSuchKey":
+            if error_code in ("NoSuchKey", "NoSuchBucket", "404"):
                 return False
             else:
                 raise CheckpointError(f"S3 access error: {e}") from e
@@ -72,7 +72,7 @@ class CheckpointStore:
 
             return Checkpoint(df)
 
-        except FileNotFoundError:
+        except (FileNotFoundError, OSError):
             # File doesn't exist, return None for first run
             return None
         except (ComputeError, PolarsError) as e:
@@ -98,7 +98,7 @@ class CheckpointStore:
             s3_uri = f"s3://{self.bucket}/{self.key}"
             checkpoint.dataframe.write_parquet(s3_uri)
             return s3_uri
-        except (ComputeError, PolarsError) as e:
+        except (ComputeError, PolarsError, FileNotFoundError, OSError) as e:
             # Polars-specific errors (write failures, schema issues, etc.)
             raise CheckpointError(f"Failed to write parquet: {e}") from e
         except ClientError as e:
