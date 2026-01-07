@@ -700,78 +700,258 @@ All logs use structured JSON format via Lambda Powertools Logger.
 
 ## Testing Strategy
 
+### Testing Architecture
+
+The testing strategy uses **moto.server** (ThreadedMotoServer) to provide realistic S3 mocking while keeping polars methods unmocked. This approach allows polars to perform actual S3 operations against a mocked S3 server, providing more realistic test scenarios than direct method mocking.
+
+**Key Benefits:**
+
+- **Realistic S3 Operations**: Polars performs actual S3 read/write operations against mocked server
+- **End-to-End Testing**: Complete S3 → polars → parquet workflow testing
+- **Error Simulation**: Real S3 error conditions (access denied, file not found, etc.)
+- **Performance Testing**: Actual network and serialization overhead
+
+### Test Infrastructure Setup
+
+**moto.server Configuration:**
+
+```python
+import pytest
+from moto.server import ThreadedMotoServer
+
+@pytest.fixture(scope="module")
+def moto_server():
+    """Fixture to run a mocked AWS server for testing."""
+    # Use port=0 to get a random free port
+    server = ThreadedMotoServer(port=0)
+    server.start()
+    host, port = server.get_host_and_port()
+    yield f"http://{host}:{port}"
+    server.stop()
+
+@pytest.fixture
+def s3_client(moto_server):
+    """S3 client configured to use moto server."""
+    import boto3
+    return boto3.client("s3", endpoint_url=moto_server)
+```
+
+**Environment Configuration:**
+
+- Set `AWS_ENDPOINT_URL` environment variable to moto server URL
+- Configure boto3 clients to use moto server endpoint
+- Polars automatically uses boto3 configuration for S3 operations
+
 ### Unit Testing
 
-Unit tests will verify specific examples and edge cases:
+Unit tests will verify specific examples and edge cases using moto.server:
 
-1. **S3 Client Tests**
-   - Test listing files with various prefixes
-   - Test retrieving valid JSON files
-   - Test error handling for missing files
+1. **S3 Operations Tests**
+   - Test listing files with various prefixes using real S3 operations
+   - Test retrieving valid JSON files through actual S3 get operations
+   - Test error handling for missing files with real S3 errors
+   - Test S3 permissions and access denied scenarios
 
 2. **Validation Tests**
-   - Test valid events pass validation
+   - Test valid events pass validation with real JSON from mocked S3
    - Test invalid ptid patterns fail validation
    - Test missing required fields fail validation
    - Test invalid action values fail validation
 
-3. **Parquet Writer Tests**
-   - Test writing empty DataFrame
-   - Test writing DataFrame with null values
-   - Test S3 upload success
+3. **Parquet Operations Tests**
+   - Test writing empty DataFrame to mocked S3 using polars
+   - Test writing DataFrame with null values using polars S3 operations
+   - Test reading parquet files from mocked S3 using polars
+   - Test S3 upload/download success with actual polars operations
 
 4. **Handler Tests**
-   - Test successful end-to-end execution
-   - Test handling of mixed valid/invalid files
-   - Test error response format
+   - Test successful end-to-end execution with mocked S3 server
+   - Test handling of mixed valid/invalid files with real S3 operations
+   - Test error response format with actual S3 error conditions
+
+### Integration Testing with moto.server
+
+**Complete Workflow Testing:**
+
+```python
+def test_complete_workflow_with_moto_server(moto_server, s3_client):
+    """Test complete Lambda workflow with mocked S3 server."""
+    # 1. Setup test data in mocked S3
+    s3_client.create_bucket(Bucket="test-events")
+    s3_client.create_bucket(Bucket="test-checkpoints")
+    
+    # 2. Upload test event files
+    test_events = [...]  # Real JSON event data
+    for i, event in enumerate(test_events):
+        s3_client.put_object(
+            Bucket="test-events",
+            Key=f"log-submit-2024011{i}.json",
+            Body=json.dumps(event)
+        )
+    
+    # 3. Execute Lambda handler (polars will use real S3 operations)
+    response = lambda_handler({
+        "source_bucket": "test-events",
+        "checkpoint_bucket": "test-checkpoints", 
+        "checkpoint_key": "checkpoint.parquet"
+    }, mock_context)
+    
+    # 4. Verify results using real S3 operations
+    # Polars will actually read from mocked S3
+    checkpoint_df = pl.read_parquet("s3://test-checkpoints/checkpoint.parquet")
+    assert len(checkpoint_df) == len(test_events)
+```
+
+**Incremental Processing Testing:**
+
+```python
+def test_incremental_processing_with_moto_server(moto_server, s3_client):
+    """Test incremental processing with real S3 operations."""
+    # 1. Setup initial checkpoint in mocked S3
+    initial_events = [...]
+    initial_df = pl.DataFrame(initial_events)
+    initial_df.write_parquet("s3://test-checkpoints/checkpoint.parquet")
+    
+    # 2. Add new events to mocked S3
+    new_events = [...]
+    for event in new_events:
+        s3_client.put_object(...)
+    
+    # 3. Run incremental processing
+    # CheckpointStore will use real polars S3 operations
+    # S3EventRetriever will use real boto3 S3 operations
+    response = lambda_handler(...)
+    
+    # 4. Verify incremental merge worked correctly
+    updated_df = pl.read_parquet("s3://test-checkpoints/checkpoint.parquet")
+    assert len(updated_df) == len(initial_events) + len(new_events)
+```
 
 ### Property-Based Testing
 
-Property-based tests will verify universal properties across many inputs using the **Hypothesis** library for Python.
+Property-based tests will verify universal properties across many inputs using the **Hypothesis** library for Python with **moto.server** for realistic S3 operations.
 
 **Configuration**: Each property test will run a minimum of 100 iterations.
+
+**Test Infrastructure**: Property tests use the same moto.server fixture to ensure polars and boto3 perform real S3 operations against the mocked server.
 
 **Test Tagging**: Each property-based test will include a comment explicitly referencing the correctness property using this format:
 
 ```python
 # Feature: event-log-scraper, Property 1: File pattern matching correctness
+def test_file_pattern_matching_property(moto_server, s3_client):
+    """Property test with real S3 operations via moto.server."""
+    # Hypothesis generates test data
+    # S3 operations use real boto3 calls to mocked server
+    # Polars operations use real S3 read/write to mocked server
 ```
 
-**Property Test Coverage**:
+**Property Test Coverage with moto.server:**
 
-1. **Property 0: Incremental checkpoint** - Generate previous checkpoint and new events, verify merge correctness
-2. **Property 1: File pattern matching** - Generate random S3 keys and verify pattern matching
-3. **Property 2: JSON retrieval** - Generate random JSON structures and verify round-trip
-4. **Property 3: Timestamp filtering** - Generate events with various timestamps and verify filtering
-5. **Property 4: Error resilience** - Generate mixed valid/invalid file sets and verify continuation
-6. **Property 5: Validation enforcement** - Generate random event data and verify all constraints
-7. **Property 6: Type conversion** - Generate random pipeline_adcid values and verify int conversion
-8. **Property 7: Null preservation** - Generate events with various null combinations
-9. **Property 8: Serialization round-trip** - Generate random VisitEvents and verify round-trip
-10. **Property 9: Parquet round-trip** - Generate random event collections and verify parquet round-trip
-11. **Property 10: Output path** - Generate random output configurations and verify path in response
-12. **Property 11: Query filtering** - Generate random datasets and filter criteria
-13. **Property 12: Temporal calculations** - Generate random events and verify time calculations
-14. **Property 13: Aggregation** - Generate random datasets and verify group counts
-15. **Property 14: Partial failure** - Generate mixed valid/invalid files and verify output
-16. **Property 15: Event evolution** - Generate datasets with evolving events and verify all preserved
-17. **Property 16: Timestamp ordering** - Generate random timestamp sequences and verify ordering
-18. **Property 17: Event completeness** - Generate events with varying completeness and verify latest identification
-19. **Property 18: Logging** - Generate various execution scenarios and verify log content
+1. **Property 0: Incremental checkpoint** - Generate previous checkpoint and new events, use real polars S3 operations to verify merge correctness
+2. **Property 1: File pattern matching** - Generate random S3 keys, upload to mocked S3, verify pattern matching with real S3 list operations
+3. **Property 2: JSON retrieval** - Generate random JSON structures, upload to mocked S3, verify round-trip with real S3 operations
+4. **Property 3: Timestamp filtering** - Generate events with various timestamps, upload to mocked S3, verify filtering with real retrieval
+5. **Property 4: Error resilience** - Generate mixed valid/invalid file sets in mocked S3, verify continuation with real S3 errors
+6. **Property 5: Validation enforcement** - Generate random event data, upload to mocked S3, verify all constraints with real JSON retrieval
+7. **Property 6: Type conversion** - Generate random pipeline_adcid values, verify int conversion with real S3 JSON operations
+8. **Property 7: Null preservation** - Generate events with various null combinations, test with real S3 round-trip
+9. **Property 8: Serialization round-trip** - Generate random VisitEvents, test with real S3 JSON operations
+10. **Property 9: Parquet round-trip** - Generate random event collections, verify parquet round-trip with real polars S3 operations
+11. **Property 10: Output path** - Generate random output configurations, verify path with real S3 operations
+12. **Property 11: Query filtering** - Generate random datasets, upload to mocked S3, test filtering with real polars S3 operations
+13. **Property 12: Temporal calculations** - Generate random events, verify time calculations with real parquet operations
+14. **Property 13: Aggregation** - Generate random datasets, verify group counts with real polars S3 operations
+15. **Property 14: Partial failure** - Generate mixed valid/invalid files in mocked S3, verify output with real error handling
+16. **Property 15: Event evolution** - Generate datasets with evolving events, test with real S3 operations
+17. **Property 16: Timestamp ordering** - Generate random timestamp sequences, verify ordering with real parquet operations
+18. **Property 17: Event completeness** - Generate events with varying completeness, verify latest identification with real S3 operations
+19. **Property 18: Logging** - Generate various execution scenarios, verify log content with real S3 operations
+
+### Error Simulation with moto.server
+
+**Realistic Error Testing:**
+
+- **S3 Access Denied**: Configure mocked S3 to return real AccessDenied errors
+- **File Not Found**: Test with missing files in mocked S3 bucket
+- **Network Timeouts**: Simulate connection issues with moto server
+- **Corrupted Files**: Upload invalid parquet/JSON to mocked S3
+- **Permission Errors**: Configure bucket policies in mocked S3
+
+**Example Error Test:**
+
+```python
+def test_s3_access_denied_with_moto_server(moto_server, s3_client):
+    """Test handling of real S3 access denied errors."""
+    # Create bucket but don't grant permissions
+    s3_client.create_bucket(Bucket="restricted-bucket")
+    
+    # Configure retriever to use restricted bucket
+    retriever = S3EventRetriever("restricted-bucket")
+    
+    # This will generate real S3 access denied error
+    with pytest.raises(ClientError) as exc_info:
+        retriever.list_event_files()
+    
+    assert exc_info.value.response['Error']['Code'] == 'AccessDenied'
+```
 
 ### Integration Testing
 
-Integration tests will verify the Lambda function works correctly with actual AWS services:
+Integration tests will verify the Lambda function works correctly with moto.server providing realistic S3 operations:
 
-1. **S3 Integration**
-   - Test reading from real S3 bucket (using LocalStack or test bucket)
-   - Test writing parquet to S3
-   - Test handling S3 errors
+1. **S3 Integration with moto.server**
+   - Test reading from mocked S3 bucket using real polars operations
+   - Test writing parquet to mocked S3 using real polars operations
+   - Test handling real S3 errors generated by moto.server
 
-2. **End-to-End Tests**
-   - Test complete Lambda execution with sample event logs
-   - Test querying resulting parquet file
-   - Verify CloudWatch logs and metrics
+2. **End-to-End Tests with moto.server**
+   - Test complete Lambda execution with sample event logs in mocked S3
+   - Test querying resulting parquet file using real polars S3 operations
+   - Verify CloudWatch logs and metrics with realistic S3 interactions
+
+**Example Integration Test:**
+
+```python
+def test_end_to_end_lambda_execution(moto_server, s3_client):
+    """Test complete Lambda execution with mocked S3 server."""
+    # Setup test buckets
+    s3_client.create_bucket(Bucket="test-events")
+    s3_client.create_bucket(Bucket="test-checkpoints")
+    
+    # Upload test event files using real S3 operations
+    test_events = [
+        {"action": "submit", "ptid": "ABC123", ...},
+        {"action": "pass-qc", "ptid": "ABC123", ...}
+    ]
+    
+    for i, event in enumerate(test_events):
+        s3_client.put_object(
+            Bucket="test-events",
+            Key=f"log-submit-2024011{i}.json",
+            Body=json.dumps(event)
+        )
+    
+    # Execute Lambda handler
+    # All S3 operations (boto3 and polars) will use mocked server
+    response = lambda_handler({
+        "source_bucket": "test-events",
+        "checkpoint_bucket": "test-checkpoints",
+        "checkpoint_key": "checkpoint.parquet"
+    }, mock_context)
+    
+    # Verify results using real polars S3 operations
+    checkpoint_df = pl.read_parquet(
+        "s3://test-checkpoints/checkpoint.parquet",
+        storage_options={"endpoint_url": moto_server}
+    )
+    
+    assert len(checkpoint_df) == len(test_events)
+    assert response["statusCode"] == 200
+    assert response["new_events_processed"] == len(test_events)
+```
+
+- Verify CloudWatch logs and metrics
 
 ### Test Data
 

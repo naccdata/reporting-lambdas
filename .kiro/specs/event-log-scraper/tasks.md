@@ -97,7 +97,7 @@ The main remaining tasks focus on:
   - ✅ Updated tests for exists() method with existing and non-existing files
   - ✅ Updated tests for load() method returning Checkpoint objects
   - ✅ Added tests for save() method writing checkpoints to S3
-  - ✅ Mock S3 operations for isolated testing
+  - ✅ Use moto.server for realistic S3 operations with polars
   - _Requirements: 1.1, 4.1, 4.2, 4.5, 7.4_
 
 - [x] 9. Implement CheckpointStore component to pass tests
@@ -150,7 +150,7 @@ The main remaining tasks focus on:
   - Write unit tests for should_process_event with timestamp filtering
   - Write unit tests for retrieve_and_validate_events with direct VisitEvent validation
   - Write unit tests for error handling with S3 access errors
-  - Mock S3 operations for isolated testing
+  - Use moto.server for realistic S3 operations with boto3
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4, 6.1, 6.2, 6.3, 10.3_
 
 - [x] 17. Write property test for file pattern matching
@@ -182,7 +182,7 @@ The main remaining tasks focus on:
   - Create test file `lambda/event_log_checkpoint/test/python/test_lambda_function.py`
   - Write test for Lambda event parsing (source_bucket, checkpoint_bucket, checkpoint_key, prefix)
   - Write test for basic response format structure
-  - Mock all component dependencies for isolated testing
+  - Use moto.server for realistic S3 operations in component dependencies
   - _Requirements: 10.1, 10.4_
 
 - [x] 23. Implement Lambda handler basic structure to pass tests
@@ -193,28 +193,52 @@ The main remaining tasks focus on:
   - Run tests to ensure all pass
   - _Requirements: 10.1, 10.4_
 
-- [ ] 24. Write unit tests for Lambda handler first run scenario
+- [x] 24. Write unit tests for Lambda handler first run scenario
   - Add tests for first run (no previous checkpoint exists)
   - Test CheckpointStore.exists() returns False
   - Test CheckpointStore.load() creates empty checkpoint
-  - Mock S3EventRetriever and Checkpoint components
+  - Use moto.server for realistic S3 operations with S3EventRetriever and Checkpoint components
   - _Requirements: 6.3, 10.5_
 
-- [ ] 25. Implement Lambda handler first run logic to pass tests
+- [x] 25. Implement Lambda handler first run logic to pass tests
   - Add checkpoint loading logic with CheckpointStore.exists() check
   - Handle empty checkpoint creation for first run
   - Update response to include checkpoint status
   - Run tests to ensure all pass
   - _Requirements: 6.3, 10.5_
 
-- [ ] 26. Write unit tests for Lambda handler incremental run scenario
+- [x] 26. Update CheckpointStore tests to use moto.server (vertical slice)
+  - ✅ Updated test_checkpoint_store.py to use moto.server fixture instead of direct S3 mocking
+  - ✅ Created moto_server pytest fixture for CheckpointStore tests
+  - ✅ Configured polars to use moto.server endpoint for S3 operations in CheckpointStore tests
+  - ✅ Verified all existing CheckpointStore tests pass with realistic S3 operations
+  - ✅ Ensured polars can read/write parquet files via mocked S3 server
+  - ✅ Tested that polars operations work with actual S3 URIs (s3://bucket/key format)
+  - ✅ Updated CheckpointStore implementation to handle additional exception types (OSError, FileNotFoundError) from polars S3 operations
+  - _Requirements: 4.1, 4.2, 4.5, 7.4_
+
+- [ ] 26b. Update S3EventRetriever tests to use moto.server (after 26 succeeds)
+  - Update test_s3_retriever.py to use moto.server for realistic boto3 S3 operations
+  - Extend moto_server fixture pattern from CheckpointStore tests
+  - Verify all existing S3EventRetriever tests pass with realistic S3 operations
+  - Test real S3 error conditions (AccessDenied, NoSuchKey, etc.)
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 6.1, 6.2, 6.3_
+
+- [ ] 26c. Update Lambda handler tests to use moto.server (after 26b succeeds)
+  - Update test_lambda_function.py to use moto.server for end-to-end testing
+  - Create shared moto_server pytest fixture for all test files
+  - Test complete workflow with realistic S3 operations
+  - Verify end-to-end integration with mocked S3 server
+  - _Requirements: 10.1, 10.4, 10.5_
+
+- [ ] 29. Write unit tests for Lambda handler incremental run scenario
   - Add tests for incremental run (previous checkpoint exists)
   - Test CheckpointStore.load() returns existing checkpoint
   - Test event retrieval with timestamp filtering
-  - Mock event processing pipeline
+  - Use moto.server for realistic S3 operations in event processing pipeline
   - _Requirements: 6.4, 10.6_
 
-- [ ] 27. Implement Lambda handler incremental run logic to pass tests
+- [ ] 30. Implement Lambda handler incremental run logic to pass tests
   - Add event retrieval with S3EventRetriever.retrieve_and_validate_events()
   - Add checkpoint merging with Checkpoint.add_events()
   - Add checkpoint saving with CheckpointStore.save()
@@ -222,111 +246,111 @@ The main remaining tasks focus on:
   - Run tests to ensure all pass
   - _Requirements: 6.4, 10.6_
 
-- [ ] 28. Write unit tests for Lambda handler error handling
+- [ ] 31. Write unit tests for Lambda handler error handling
   - Add tests for S3 permission errors
   - Add tests for invalid JSON handling
   - Add tests for mixed valid/invalid files
   - Test error response format
   - _Requirements: 6.1, 6.2, 6.5, 10.7_
 
-- [ ] 29. Implement Lambda handler error handling to pass tests
+- [ ] 32. Implement Lambda handler error handling to pass tests
   - Add try-catch blocks for S3 permissions and unexpected exceptions
   - Add partial failure handling for mixed valid/invalid files
   - Return appropriate error responses with statusCode and error details
   - Run tests to ensure all pass
   - _Requirements: 6.1, 6.2, 6.5, 10.7_
 
-- [ ] 30. Write unit tests for Lambda handler response completeness
+- [ ] 33. Write unit tests for Lambda handler response completeness
   - Add tests for complete response format with all required fields
   - Test response includes: checkpoint_path, new_events_processed, total_events, events_failed, last_processed_timestamp, execution_time_ms
   - Test integration with all components working together
   - _Requirements: 10.2, 10.3_
 
-- [ ] 31. Implement Lambda handler response completeness to pass tests
+- [ ] 34. Implement Lambda handler response completeness to pass tests
   - Add execution timing measurement
   - Add comprehensive response building with all metrics
   - Add final integration of all pipeline components
   - Run tests to ensure all pass
   - _Requirements: 10.2, 10.3_
 
-- [ ] 32. Write property test for parquet round-trip
+- [ ] 35. Write property test for parquet round-trip
   - **Property 9: Parquet round-trip**
   - **Validates: Requirements 4.2**
 
-- [ ] 33. Write property test for output path correctness
+- [ ] 36. Write property test for output path correctness
   - **Property 10: Output path correctness**
   - **Validates: Requirements 4.5**
 
-- [ ] 34. Write property test for partial failure handling
+- [ ] 37. Write property test for partial failure handling
   - **Property 14: Partial failure handling**
   - **Validates: Requirements 6.1, 6.2, 6.4**
 
-- [ ] 35. Write property test for logging completeness
+- [ ] 38. Write property test for logging completeness
   - **Property 18: Logging completeness**
   - **Validates: Requirements 10.2, 10.3**
 
-- [ ] 36. Implement Lambda handler property-based test fixes
+- [ ] 39. Implement Lambda handler property-based test fixes
   - Run property tests and fix any issues found
   - Ensure all property tests pass
   - _Requirements: 4.2, 4.5, 6.1, 6.2, 6.4, 10.2, 10.3_
 
-- [ ] 37. Write unit tests for query validation basic functionality
+- [ ] 40. Write unit tests for query validation basic functionality
   - Create test file `lambda/event_log_checkpoint/test/python/test_query_validation.py`
   - Write tests to verify parquet file supports filtering by center_label
   - Write tests to verify counting events by action type
   - Create sample parquet files for testing
   - _Requirements: 5.1, 5.2_
 
-- [ ] 38. Implement query validation basic functionality to pass tests
+- [ ] 41. Implement query validation basic functionality to pass tests
   - Create utility functions for center_label filtering
   - Create utility functions for action type counting
   - Ensure parquet schema supports basic filtering operations
   - Run tests to ensure all pass
   - _Requirements: 5.1, 5.2_
 
-- [ ] 39. Write unit tests for query validation advanced filtering
+- [ ] 42. Write unit tests for query validation advanced filtering
   - Add tests to verify filtering by packet type
   - Add tests to verify date range filtering
   - Add tests to verify grouping and counting by multiple fields
   - _Requirements: 5.3, 5.5, 5.6_
 
-- [ ] 40. Implement query validation advanced filtering to pass tests
+- [ ] 43. Implement query validation advanced filtering to pass tests
   - Add packet type filtering functionality
   - Add date range filtering functionality
   - Add multi-field grouping and counting functionality
   - Run tests to ensure all pass
   - _Requirements: 5.3, 5.5, 5.6_
 
-- [ ] 41. Write unit tests for query validation temporal calculations
+- [ ] 44. Write unit tests for query validation temporal calculations
   - Add tests to verify temporal calculations (visit_date to timestamp differences)
   - Add tests for complex temporal query patterns
   - _Requirements: 5.4, 5.7, 5.8_
 
-- [ ] 42. Implement query validation temporal calculations to pass tests
+- [ ] 45. Implement query validation temporal calculations to pass tests
   - Add temporal calculation utility functions
   - Ensure parquet schema supports all temporal operations
   - Verify all tests pass with actual parquet files
   - Run tests to ensure all pass
   - _Requirements: 5.4, 5.7, 5.8_
 
-- [ ] 43. Write property test for query filtering correctness
+- [ ] 46. Write property test for query filtering correctness
   - **Property 11: Query filtering correctness**
   - **Validates: Requirements 5.1, 5.2, 5.5, 5.6**
 
-- [ ] 44. Write property test for temporal calculation support
+- [ ] 47. Write property test for temporal calculation support
   - **Property 12: Temporal calculation support**
   - **Validates: Requirements 5.3, 5.4**
 
-- [ ] 45. Write property test for aggregation correctness
+- [ ] 48. Write property test for aggregation correctness
   - **Property 13: Aggregation correctness**
   - **Validates: Requirements 5.7, 5.8**
 
-- [ ] 46. Implement query validation property-based test fixes
+- [ ] 49. Implement query validation property-based test fixes
   - Run property tests and fix any issues found
   - Ensure all property tests pass for query validation
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8_
 
-- [ ] 47. Create Terraform infrastructure configuration with layer optimization
+- [ ] 50. Create Terraform infrastructure configuration with layer optimization
   - Create `lambda/event_log_checkpoint/main.tf` with smart layer management
   - Create `lambda/event_log_checkpoint/variables.tf` with layer reuse options
   - Create `lambda/event_log_checkpoint/outputs.tf` with layer ARN outputs
@@ -341,7 +365,7 @@ The main remaining tasks focus on:
   - Create CloudWatch log group with 30 day retention
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [ ] 48. Build Lambda deployment packages with Pants
+- [ ] 51. Build Lambda deployment packages with Pants
   - Build Lambda function: `pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:lambda`
   - Build Powertools layer: `pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:powertools`
   - Build data processing layer: `pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:data_processing`
@@ -349,5 +373,5 @@ The main remaining tasks focus on:
   - Test that function code is separate from dependency layers
   - _Requirements: 8.1, 8.2, 8.3_
 
-- [ ] 49. Final checkpoint - Ensure all tests pass
+- [ ] 52. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
