@@ -101,13 +101,9 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
         
     Returns:
         dict: Response containing:
-            - statusCode: HTTP status code
-            - checkpoint_path: S3 path to updated checkpoint file
-            - new_events_processed: Count of newly processed events
-            - total_events: Total count of events in checkpoint
-            - events_failed: Count of failed events
-            - last_processed_timestamp: Latest timestamp in checkpoint
-            - execution_time_ms: Total execution time
+            - statusCode: HTTP status code (200 for success, 4xx/5xx for errors)
+            - error: Error type (only present on failure)
+            - message: Error message (only present on failure)
             
     Workflow:
         1. CheckpointStore loads previous checkpoint (or None if first run)
@@ -115,7 +111,8 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
         3. S3EventRetriever retrieves and validates new events since last timestamp
         4. Checkpoint.add_events() merges previous checkpoint with new events
         5. CheckpointStore saves updated checkpoint to S3
-        6. Return processing summary
+        6. Log checkpoint S3 path and processing summary
+        7. Return simple success/error response
     """
 ```
 
@@ -611,9 +608,9 @@ schema = {
 *For any* collection of VisitEvent objects, writing to parquet and reading back should preserve all fields with correct data types (strings as strings, integers as integers, visit_date as string, timestamps as timestamps).
 **Validates: Requirements 4.2**
 
-### Property 10: Output path correctness
+### Property 10: Checkpoint path logging
 
-*For any* successful Lambda execution, the response should contain the S3 URI (s3://bucket/key) of the updated checkpoint file.
+*For any* successful Lambda execution, the checkpoint S3 path should be logged and the response should contain a success status code (200).
 **Validates: Requirements 4.5**
 
 ### Property 11: Query filtering correctness

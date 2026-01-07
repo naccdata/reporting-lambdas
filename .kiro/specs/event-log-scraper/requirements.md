@@ -74,7 +74,7 @@ The Lambda will be built using Python 3.12, AWS Lambda Powertools for observabil
 2. WHEN the Lambda writes the parquet file THEN the Lambda SHALL preserve all event fields with appropriate data types
 3. WHEN the Lambda writes the parquet file THEN the Lambda SHALL store it in a designated S3 location
 4. WHEN the Lambda writes the parquet file THEN the Lambda SHALL use columnar compression for efficient storage
-5. WHEN the Lambda completes successfully THEN the Lambda SHALL output the S3 path of the created checkpoint file
+5. WHEN the Lambda completes successfully THEN the Lambda SHALL log the S3 path of the created checkpoint file and return a success status code
 
 ### Requirement 5
 
