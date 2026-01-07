@@ -109,9 +109,9 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
         1. CheckpointStore loads previous checkpoint (or None if first run)
         2. Get last processed timestamp for incremental processing
         3. S3EventRetriever retrieves and validates new events since last timestamp
-        4. Checkpoint.add_events() merges previous checkpoint with new events
-        5. CheckpointStore saves updated checkpoint to S3
-        6. Log checkpoint S3 path and processing summary
+        4. If valid events exist: Checkpoint.add_events() merges previous checkpoint with new events
+        5. If checkpoint has events: CheckpointStore saves updated checkpoint to S3
+        6. Log checkpoint S3 path (if saved) and basic processing info
         7. Return simple success/error response
     """
 ```
@@ -344,10 +344,10 @@ class VisitEvent(BaseModel):
 2. CheckpointStore.load() returns None
 3. Set `since_timestamp` to None (process all events)
 4. S3EventRetriever retrieves and validates all event log files from S3 using VisitEvent model directly
-5. Create empty checkpoint: `checkpoint = Checkpoint.empty()`
-6. Add validated events: `updated_checkpoint = checkpoint.add_events(valid_events)`
-7. CheckpointStore saves updated checkpoint to S3
-8. Return summary with total events processed
+5. If valid events exist: Create checkpoint from events: `checkpoint = Checkpoint.from_events(valid_events)`
+6. If checkpoint has events: CheckpointStore saves checkpoint to S3
+7. If no valid events: Skip checkpoint creation and saving
+8. Return success with basic processing info logged
 
 ### Subsequent Runs (Checkpoint Exists)
 
@@ -356,9 +356,10 @@ class VisitEvent(BaseModel):
 3. Extract maximum timestamp: `last_timestamp = checkpoint.get_last_processed_timestamp()`
 4. Set `since_timestamp` to `last_timestamp`
 5. S3EventRetriever retrieves and validates only new event files (timestamp > last_timestamp) using VisitEvent model directly
-6. Add new events to checkpoint: `updated_checkpoint = checkpoint.add_events(new_valid_events)`
-7. CheckpointStore saves updated checkpoint to S3 (overwrites previous)
-8. Return summary with new events processed and total events
+6. If new valid events exist: Add new events to checkpoint: `updated_checkpoint = checkpoint.add_events(new_valid_events)`
+7. If checkpoint has events: CheckpointStore saves updated checkpoint to S3 (overwrites previous)
+8. If no new valid events: Skip checkpoint saving (existing checkpoint remains unchanged)
+9. Return success with basic processing info logged
 
 ### Timestamp Filtering Logic
 
@@ -392,7 +393,7 @@ def should_process_event(event_data: dict, since_timestamp: datetime) -> bool:
 
 3. **Checkpoint corruption**: If checkpoint file is corrupted or unreadable, Lambda fails with error. Manual intervention required to restore or delete checkpoint.
 
-4. **Empty incremental run**: If no new events exist, Lambda still succeeds and returns 0 new events processed.
+4. **Empty incremental run**: If no new events exist, Lambda still succeeds. No checkpoint is saved if the existing checkpoint would remain unchanged.
 
 ### Event Evolution Pattern
 

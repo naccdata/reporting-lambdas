@@ -70,11 +70,12 @@ The Lambda will be built using Python 3.12, AWS Lambda Powertools for observabil
 
 #### Acceptance Criteria
 
-1. WHEN the Lambda processes all event logs THEN the Lambda SHALL create a single parquet file containing all valid events
+1. WHEN the Lambda processes valid event logs THEN the Lambda SHALL create a single parquet file containing all valid events
 2. WHEN the Lambda writes the parquet file THEN the Lambda SHALL preserve all event fields with appropriate data types
 3. WHEN the Lambda writes the parquet file THEN the Lambda SHALL store it in a designated S3 location
 4. WHEN the Lambda writes the parquet file THEN the Lambda SHALL use columnar compression for efficient storage
 5. WHEN the Lambda completes successfully THEN the Lambda SHALL log the S3 path of the created checkpoint file and return a success status code
+6. WHEN the Lambda processes no valid events THEN the Lambda SHALL not create or save a checkpoint file
 
 ### Requirement 5
 
@@ -161,7 +162,7 @@ The Lambda will be built using Python 3.12, AWS Lambda Powertools for observabil
 1. WHEN the Lambda starts execution THEN the Lambda SHALL log the invocation parameters using Lambda Powertools Logger
 2. WHEN the Lambda processes files THEN the Lambda SHALL log the count of files retrieved and processed with structured context
 3. WHEN the Lambda encounters validation errors THEN the Lambda SHALL log the specific validation failures with file paths
-4. WHEN the Lambda completes execution THEN the Lambda SHALL log the total execution time, event count, and checkpoint file size
+4. WHEN the Lambda completes execution THEN the Lambda SHALL log the total execution time
 5. WHEN the Lambda logs messages THEN the Lambda SHALL use Lambda Powertools structured logging with appropriate log levels
 6. WHEN the Lambda executes THEN the Lambda SHALL use Lambda Powertools Tracer for X-Ray tracing of S3 operations
 7. WHEN the Lambda processes events THEN the Lambda SHALL use Lambda Powertools Metrics to emit custom CloudWatch metrics for event counts and processing duration
