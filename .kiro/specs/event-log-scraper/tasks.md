@@ -6,6 +6,8 @@ This implementation plan builds upon the existing project structure that has alr
 
 **Test-Driven Development (TDD) Approach**: This plan follows TDD methodology where tests are written first, then implementation code is written to make those tests pass. This ensures high code quality, better design, and comprehensive test coverage from the start.
 
+**Code Quality**: All test code must follow the guidelines in `.kiro/steering/tech.md`, particularly the E501 line length prevention patterns for test data constants.
+
 ## Development Workflow
 
 All development should be done using the established dev container workflow:
@@ -217,14 +219,14 @@ The main remaining tasks focus on:
   - ✅ Updated CheckpointStore implementation to handle additional exception types (OSError, FileNotFoundError) from polars S3 operations
   - _Requirements: 4.1, 4.2, 4.5, 7.4_
 
-- [ ] 26b. Update S3EventRetriever tests to use moto.server (after 26 succeeds)
+- [x] 26b. Update S3EventRetriever tests to use moto.server (after 26 succeeds)
   - Update test_s3_retriever.py to use moto.server for realistic boto3 S3 operations
   - Extend moto_server fixture pattern from CheckpointStore tests
   - Verify all existing S3EventRetriever tests pass with realistic S3 operations
   - Test real S3 error conditions (AccessDenied, NoSuchKey, etc.)
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 6.1, 6.2, 6.3_
 
-- [ ] 26c. Update Lambda handler tests to use moto.server (after 26b succeeds)
+- [x] 26c. Update Lambda handler tests to use moto.server (after 26b succeeds)
   - Update test_lambda_function.py to use moto.server for end-to-end testing
   - Create shared moto_server pytest fixture for all test files
   - Test complete workflow with realistic S3 operations
