@@ -136,7 +136,7 @@ class TestLambdaHandlerBasicStructure:
         assert isinstance(response, dict)
 
     def test_basic_response_format_structure(self, s3_client, setup_s3_environment):
-        """Test that Lambda handler returns a dictionary response."""
+        """Test that Lambda handler returns simplified response format."""
         # Create test buckets
         source_bucket = "test-bucket-response"
         checkpoint_bucket = "test-checkpoint-bucket-response"
@@ -154,20 +154,30 @@ class TestLambdaHandlerBasicStructure:
         # Call handler
         response = lambda_handler(test_event, mock_context)
 
-        # Verify response is a dictionary (basic structure test)
-        # The actual response format will be implemented in task 23
+        # Verify simplified response format
         assert isinstance(response, dict)
+        assert response == {"statusCode": 200}
+
+        # Verify no detailed metrics in response
+        assert "checkpoint_path" not in response
+        assert "new_events_processed" not in response
+        assert "total_events" not in response
+        assert "events_failed" not in response
+        assert "execution_time_ms" not in response
 
     def test_empty_event_handling(self, setup_s3_environment):
-        """Test Lambda handler behavior with empty event."""
+        """Test Lambda handler behavior with empty event returns error."""
         mock_context = Mock(spec=LambdaContext)
 
-        # Test with empty event - should not crash (basic structure test)
+        # Test with empty event - should return validation error
         empty_event = {}
 
-        # Call handler - should not raise any errors for basic structure test
+        # Call handler
         response = lambda_handler(empty_event, mock_context)
         assert isinstance(response, dict)
+        assert response["statusCode"] == 400
+        assert response["error"] == "ValidationError"
+        assert "message" in response
 
     def test_handler_function_signature(self):
         """Test that the handler function has the correct signature."""
@@ -278,18 +288,12 @@ class TestLambdaHandlerFirstRunScenario:
         }
         mock_context = Mock(spec=LambdaContext)
 
-        # Call handler - this will test the current stub implementation
+        # Call handler
         response = lambda_handler(test_event, mock_context)
 
-        # Verify response is a dictionary (basic structure test for current stub)
+        # Verify simplified response format
         assert isinstance(response, dict)
-        assert "statusCode" in response
-        assert response["statusCode"] == 200
-
-        # Note: The actual CheckpointStore calls will be tested when
-        # implementation is added
-        # For now, we're testing that the handler doesn't crash with the
-        # expected event structure
+        assert response == {"statusCode": 200}
 
     def test_first_run_checkpoint_store_load_creates_empty_checkpoint(
         self, s3_client, setup_s3_environment
@@ -310,16 +314,12 @@ class TestLambdaHandlerFirstRunScenario:
         }
         mock_context = Mock(spec=LambdaContext)
 
-        # Call handler - this will test the current stub implementation
+        # Call handler
         response = lambda_handler(test_event, mock_context)
 
-        # Verify response is a dictionary (basic structure test for current stub)
+        # Verify simplified response format
         assert isinstance(response, dict)
-        assert "statusCode" in response
-        assert response["statusCode"] == 200
-
-        # Note: The actual CheckpointStore.load() and Checkpoint.empty() calls
-        # will be tested when implementation is added
+        assert response == {"statusCode": 200}
 
     def test_first_run_s3_event_retriever_mocked(self, s3_client, setup_s3_environment):
         """Test S3EventRetriever is properly mocked for first run scenario."""
@@ -435,6 +435,76 @@ class TestLambdaHandlerFirstRunScenario:
 
         # Note: The actual prefix handling will be tested when implementation is added
 
+    def test_first_run_with_no_valid_events_no_checkpoint_created(
+        self, s3_client, setup_s3_environment
+    ):
+        """Test first run scenario with no valid events - no checkpoint should be created."""
+        from checkpoint_lambda.checkpoint_store import CheckpointStore
+
+        # Create test buckets
+        source_bucket = "test-event-logs-bucket-no-valid"
+        checkpoint_bucket = "test-checkpoint-bucket-no-valid"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Create invalid event files in S3 (will fail validation)
+        invalid_events = [
+            {
+                "key": "logs/invalid-event-1.json",
+                "content": {
+                    "action": "invalid-action",  # Invalid action
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "test-project",
+                    "center_label": "test-center",
+                    "gear_name": "test-gear",
+                    "ptid": "110001",
+                    "visit_date": "2024-01-15",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+            {
+                "key": "logs/malformed.json",
+                "content": "{ invalid json content",  # Malformed JSON
+            },
+        ]
+
+        # Upload invalid event files to S3
+        for event_file in invalid_events:
+            content = event_file["content"]
+            if isinstance(content, dict):
+                import json
+
+                content = json.dumps(content)
+            s3_client.put_object(
+                Bucket=source_bucket, Key=event_file["key"], Body=content
+            )
+
+        # Setup test event
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Call handler
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify response is successful
+        assert isinstance(response, dict)
+        assert response["statusCode"] == 200
+
+        # Verify no checkpoint was created (first run with no valid events)
+        checkpoint_store = CheckpointStore(
+            checkpoint_bucket, "checkpoints/events.parquet"
+        )
+        assert not checkpoint_store.exists()
+        assert checkpoint_store.load() is None
+
     def test_first_run_scenario_event_parameter_parsing(
         self, s3_client, setup_s3_environment
     ):
@@ -502,6 +572,571 @@ class TestLambdaHandlerFirstRunScenario:
         # 4. S3EventRetriever retrieves events with since_timestamp=None
         # 5. Checkpoint.add_events() merges new events with empty checkpoint
         # 6. CheckpointStore.save() saves updated checkpoint
+
+
+class TestLambdaHandlerIncrementalRunScenario:
+    """Unit tests for Lambda handler incremental run scenario with
+    moto.server."""
+
+    def test_incremental_run_checkpoint_store_load_returns_existing_checkpoint(
+        self, s3_client, setup_s3_environment
+    ):
+        """Test CheckpointStore.load() returns existing checkpoint for
+        incremental run."""
+        from datetime import datetime
+
+        from checkpoint_lambda.checkpoint import Checkpoint
+        from checkpoint_lambda.models import VisitEvent
+
+        # Create test buckets
+        source_bucket = "test-event-logs-incremental-load"
+        checkpoint_bucket = "test-checkpoint-incremental-load"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Create existing checkpoint with sample events
+        existing_events = [
+            VisitEvent(
+                action="submit",
+                study="adrc",
+                pipeline_adcid=42,
+                project_label="ingest-form-alpha",
+                center_label="test-center",
+                gear_name="form-processor",
+                ptid="110001",
+                visit_date="2024-01-15",
+                visit_number="01",
+                datatype="form",
+                module="UDS",
+                packet="I",
+                timestamp=datetime.fromisoformat("2024-01-15T10:00:00+00:00"),
+            ),
+            VisitEvent(
+                action="pass-qc",
+                study="adrc",
+                pipeline_adcid=42,
+                project_label="ingest-form-alpha",
+                center_label="test-center",
+                gear_name="qc-processor",
+                ptid="110001",
+                visit_date="2024-01-15",
+                visit_number="01",
+                datatype="form",
+                module="UDS",
+                packet="I",
+                timestamp=datetime.fromisoformat("2024-01-15T10:20:00+00:00"),
+            ),
+        ]
+
+        # Create and save existing checkpoint
+        existing_checkpoint = Checkpoint.from_events(existing_events)
+        from checkpoint_lambda.checkpoint_store import CheckpointStore
+
+        checkpoint_store = CheckpointStore(
+            checkpoint_bucket, "checkpoints/events.parquet"
+        )
+        checkpoint_store.save(existing_checkpoint)
+
+        # Setup test event
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/2024/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Call handler
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify simplified response format
+        assert isinstance(response, dict)
+        assert response == {"statusCode": 200}
+
+    def test_incremental_run_event_retrieval_with_timestamp_filtering(
+        self, s3_client, setup_s3_environment
+    ):
+        """Test event retrieval with timestamp filtering for incremental
+        processing."""
+        from datetime import datetime
+
+        from checkpoint_lambda.checkpoint import Checkpoint
+        from checkpoint_lambda.models import VisitEvent
+
+        # Create test buckets
+        source_bucket = "test-event-logs-timestamp-filter"
+        checkpoint_bucket = "test-checkpoint-timestamp-filter"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Create existing checkpoint with events up to 2024-01-15T10:20:00Z
+        existing_events = [
+            VisitEvent(
+                action="submit",
+                study="adrc",
+                pipeline_adcid=42,
+                project_label="ingest-form-alpha",
+                center_label="test-center",
+                gear_name="form-processor",
+                ptid="110001",
+                visit_date="2024-01-15",
+                visit_number="01",
+                datatype="form",
+                module="UDS",
+                packet="I",
+                timestamp=datetime.fromisoformat("2024-01-15T10:00:00+00:00"),
+            ),
+            VisitEvent(
+                action="pass-qc",
+                study="adrc",
+                pipeline_adcid=42,
+                project_label="ingest-form-alpha",
+                center_label="test-center",
+                gear_name="qc-processor",
+                ptid="110001",
+                visit_date="2024-01-15",
+                visit_number="01",
+                datatype="form",
+                module="UDS",
+                packet="I",
+                timestamp=datetime.fromisoformat("2024-01-15T10:20:00+00:00"),
+            ),
+        ]
+
+        # Create and save existing checkpoint
+        existing_checkpoint = Checkpoint.from_events(existing_events)
+        from checkpoint_lambda.checkpoint_store import CheckpointStore
+
+        checkpoint_store = CheckpointStore(
+            checkpoint_bucket, "checkpoints/events.parquet"
+        )
+        checkpoint_store.save(existing_checkpoint)
+
+        # Create event files in S3 - some before and some after the last checkpoint timestamp
+        event_files = [
+            # This event is BEFORE the last checkpoint timestamp - should be filtered out
+            {
+                "key": create_s3_log_key(
+                    "logs/2024/",
+                    "submit",
+                    "20240115-095000",  # 09:50:00 - before last checkpoint
+                    42,
+                    "ingest-form-alpha",
+                    "110002",
+                    "01",
+                ),
+                "content": {
+                    "action": "submit",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "form-processor",
+                    "ptid": "110002",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "I",
+                    "timestamp": "2024-01-15T09:50:00Z",
+                },
+            },
+            # This event is AFTER the last checkpoint timestamp - should be processed
+            {
+                "key": create_s3_log_key(
+                    "logs/2024/",
+                    "submit",
+                    "20240115-103000",  # 10:30:00 - after last checkpoint
+                    42,
+                    "ingest-form-alpha",
+                    "110003",
+                    "01",
+                ),
+                "content": {
+                    "action": "submit",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "test-center",
+                    "gear_name": "form-processor",
+                    "ptid": "110003",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "I",
+                    "timestamp": "2024-01-15T10:30:00Z",
+                },
+            },
+        ]
+
+        # Upload event files to S3
+        for event_file in event_files:
+            s3_client.put_object(
+                Bucket=source_bucket,
+                Key=event_file["key"],
+                Body=json.dumps(event_file["content"]),
+            )
+
+        # Setup test event
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/2024/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Call handler
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify simplified response format
+        assert isinstance(response, dict)
+        assert response == {"statusCode": 200}
+
+        # Note: When full implementation is added, this test will verify:
+        # - get_last_processed_timestamp() returns 2024-01-15T10:20:00Z
+        # - S3EventRetriever is initialized with since_timestamp=2024-01-15T10:20:00Z
+        # - Only events with timestamp > 2024-01-15T10:20:00Z are processed
+        # - The event at 09:50:00 is filtered out
+        # - The event at 10:30:00 is processed
+
+    def test_incremental_run_realistic_s3_operations_pipeline(
+        self, s3_client, setup_s3_environment
+    ):
+        """Test complete incremental run with realistic S3 operations in event
+        processing pipeline."""
+        from datetime import datetime
+
+        from checkpoint_lambda.checkpoint import Checkpoint
+        from checkpoint_lambda.models import VisitEvent
+
+        # Create test buckets
+        source_bucket = "test-event-logs-realistic-pipeline"
+        checkpoint_bucket = "test-checkpoint-realistic-pipeline"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Create existing checkpoint with multiple events
+        existing_events = [
+            VisitEvent(
+                action="submit",
+                study="adrc",
+                pipeline_adcid=42,
+                project_label="ingest-form-alpha",
+                center_label="center-001",
+                gear_name="form-processor",
+                ptid="110001",
+                visit_date="2024-01-14",
+                visit_number="01",
+                datatype="form",
+                module="UDS",
+                packet="I",
+                timestamp=datetime.fromisoformat("2024-01-14T15:00:00+00:00"),
+            ),
+            VisitEvent(
+                action="pass-qc",
+                study="adrc",
+                pipeline_adcid=42,
+                project_label="ingest-form-alpha",
+                center_label="center-001",
+                gear_name="qc-processor",
+                ptid="110001",
+                visit_date="2024-01-14",
+                visit_number="01",
+                datatype="form",
+                module="UDS",
+                packet="I",
+                timestamp=datetime.fromisoformat("2024-01-14T15:30:00+00:00"),
+            ),
+            VisitEvent(
+                action="submit",
+                study="adrc",
+                pipeline_adcid=43,
+                project_label="ingest-form-beta",
+                center_label="center-002",
+                gear_name="form-processor",
+                ptid="110002",
+                visit_date="2024-01-15",
+                visit_number="01",
+                datatype="form",
+                module="FTLD",
+                packet="F",
+                timestamp=datetime.fromisoformat("2024-01-15T09:00:00+00:00"),
+            ),
+        ]
+
+        # Create and save existing checkpoint
+        existing_checkpoint = Checkpoint.from_events(existing_events)
+        from checkpoint_lambda.checkpoint_store import CheckpointStore
+
+        checkpoint_store = CheckpointStore(
+            checkpoint_bucket, "checkpoints/events.parquet"
+        )
+        checkpoint_store.save(existing_checkpoint)
+
+        # Verify checkpoint was saved correctly
+        assert checkpoint_store.exists()
+        loaded_checkpoint = checkpoint_store.load()
+        assert loaded_checkpoint is not None
+        assert loaded_checkpoint.get_event_count() == 3
+        last_timestamp = loaded_checkpoint.get_last_processed_timestamp()
+        assert last_timestamp == datetime.fromisoformat("2024-01-15T09:00:00+00:00")
+
+        # Create new event files in S3 (after the last checkpoint timestamp)
+        new_event_files = [
+            {
+                "key": create_s3_log_key(
+                    "logs/2024/",
+                    "pass-qc",
+                    "20240115-093000",  # After last checkpoint timestamp
+                    43,
+                    "ingest-form-beta",
+                    "110002",
+                    "01",
+                ),
+                "content": {
+                    "action": "pass-qc",
+                    "study": "adrc",
+                    "pipeline_adcid": 43,
+                    "project_label": "ingest-form-beta",
+                    "center_label": "center-002",
+                    "gear_name": "qc-processor",
+                    "ptid": "110002",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "FTLD",
+                    "packet": "F",
+                    "timestamp": "2024-01-15T09:30:00Z",
+                },
+            },
+            {
+                "key": create_s3_log_key(
+                    "logs/2024/",
+                    "submit",
+                    "20240115-100000",  # After last checkpoint timestamp
+                    44,
+                    "ingest-form-gamma",
+                    "110003",
+                    "01",
+                ),
+                "content": {
+                    "action": "submit",
+                    "study": "adrc",
+                    "pipeline_adcid": 44,
+                    "project_label": "ingest-form-gamma",
+                    "center_label": "center-003",
+                    "gear_name": "form-processor",
+                    "ptid": "110003",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "LBD",
+                    "packet": "L",
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+        ]
+
+        # Upload new event files to S3
+        for event_file in new_event_files:
+            s3_client.put_object(
+                Bucket=source_bucket,
+                Key=event_file["key"],
+                Body=json.dumps(event_file["content"]),
+            )
+
+        # Verify files were uploaded
+        objects = s3_client.list_objects_v2(Bucket=source_bucket, Prefix="logs/2024/")
+        assert "Contents" in objects
+        assert len(objects["Contents"]) == 2
+
+        # Setup test event
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/2024/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Call handler
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify simplified response format
+        assert isinstance(response, dict)
+        assert response == {"statusCode": 200}
+
+        # Verify checkpoint still exists and can be loaded
+        final_checkpoint = checkpoint_store.load()
+        assert final_checkpoint is not None
+        # Now has original 3 events + 2 new events = 5 total (implementation working correctly)
+        assert final_checkpoint.get_event_count() == 5
+
+        # Note: Processing metrics are now logged instead of returned in response
+        # The checkpoint S3 path is also logged instead of returned
+
+    def test_incremental_run_with_no_new_events(self, s3_client, setup_s3_environment):
+        """Test incremental run scenario when no new events exist."""
+        from datetime import datetime
+
+        from checkpoint_lambda.checkpoint import Checkpoint
+        from checkpoint_lambda.models import VisitEvent
+
+        # Create test buckets
+        source_bucket = "test-event-logs-no-new-events"
+        checkpoint_bucket = "test-checkpoint-no-new-events"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Create existing checkpoint
+        existing_events = [
+            VisitEvent(
+                action="submit",
+                study="adrc",
+                pipeline_adcid=42,
+                project_label="ingest-form-alpha",
+                center_label="test-center",
+                gear_name="form-processor",
+                ptid="110001",
+                visit_date="2024-01-15",
+                visit_number="01",
+                datatype="form",
+                module="UDS",
+                packet="I",
+                timestamp=datetime.fromisoformat("2024-01-15T10:00:00+00:00"),
+            ),
+        ]
+
+        # Create and save existing checkpoint
+        existing_checkpoint = Checkpoint.from_events(existing_events)
+        from checkpoint_lambda.checkpoint_store import CheckpointStore
+
+        checkpoint_store = CheckpointStore(
+            checkpoint_bucket, "checkpoints/events.parquet"
+        )
+        original_s3_uri = checkpoint_store.save(existing_checkpoint)
+
+        # Get the original checkpoint's last modified time for comparison
+        original_response = s3_client.head_object(
+            Bucket=checkpoint_bucket, Key="checkpoints/events.parquet"
+        )
+        original_last_modified = original_response["LastModified"]
+
+        # Don't create any new event files in S3 - simulating no new events
+
+        # Setup test event
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/2024/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Call handler
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify simplified response format
+        assert isinstance(response, dict)
+        assert response == {"statusCode": 200}
+
+        # Verify checkpoint still exists but was not overwritten
+        assert checkpoint_store.exists()
+        final_checkpoint = checkpoint_store.load()
+        assert final_checkpoint is not None
+        assert final_checkpoint.get_event_count() == 1  # Same as before
+
+        # Verify the checkpoint file was not modified (not overwritten)
+        final_response = s3_client.head_object(
+            Bucket=checkpoint_bucket, Key="checkpoints/events.parquet"
+        )
+        final_last_modified = final_response["LastModified"]
+        assert final_last_modified == original_last_modified  # File not modified
+
+    def test_incremental_run_checkpoint_store_operations(
+        self, s3_client, setup_s3_environment
+    ):
+        """Test CheckpointStore operations during incremental run."""
+        from datetime import datetime
+
+        from checkpoint_lambda.checkpoint import Checkpoint
+        from checkpoint_lambda.checkpoint_store import CheckpointStore
+        from checkpoint_lambda.models import VisitEvent
+
+        # Create test buckets
+        source_bucket = "test-event-logs-store-ops"
+        checkpoint_bucket = "test-checkpoint-store-ops"
+        s3_client.create_bucket(Bucket=source_bucket)
+        s3_client.create_bucket(Bucket=checkpoint_bucket)
+
+        # Create existing checkpoint with known data
+        existing_events = [
+            VisitEvent(
+                action="submit",
+                study="adrc",
+                pipeline_adcid=42,
+                project_label="ingest-form-alpha",
+                center_label="test-center",
+                gear_name="form-processor",
+                ptid="110001",
+                visit_date="2024-01-15",
+                visit_number="01",
+                datatype="form",
+                module="UDS",
+                packet="I",
+                timestamp=datetime.fromisoformat("2024-01-15T10:00:00+00:00"),
+            ),
+        ]
+
+        # Test CheckpointStore operations directly
+        checkpoint_store = CheckpointStore(
+            checkpoint_bucket, "checkpoints/events.parquet"
+        )
+
+        # Initially, checkpoint should not exist
+        assert not checkpoint_store.exists()
+        assert checkpoint_store.load() is None
+
+        # Create and save checkpoint
+        existing_checkpoint = Checkpoint.from_events(existing_events)
+        s3_uri = checkpoint_store.save(existing_checkpoint)
+        assert s3_uri == f"s3://{checkpoint_bucket}/checkpoints/events.parquet"
+
+        # Now checkpoint should exist
+        assert checkpoint_store.exists()
+
+        # Load checkpoint and verify data
+        loaded_checkpoint = checkpoint_store.load()
+        assert loaded_checkpoint is not None
+        assert loaded_checkpoint.get_event_count() == 1
+        assert (
+            loaded_checkpoint.get_last_processed_timestamp()
+            == datetime.fromisoformat("2024-01-15T10:00:00+00:00")
+        )
+
+        # Setup test event for Lambda handler
+        test_event = {
+            "source_bucket": source_bucket,
+            "checkpoint_bucket": checkpoint_bucket,
+            "checkpoint_key": "checkpoints/events.parquet",
+            "prefix": "logs/2024/",
+        }
+        mock_context = Mock(spec=LambdaContext)
+
+        # Call handler - should detect existing checkpoint
+        response = lambda_handler(test_event, mock_context)
+
+        # Verify simplified response format
+        assert isinstance(response, dict)
+        assert response == {"statusCode": 200}
+
+        # Verify checkpoint still exists after handler call
+        assert checkpoint_store.exists()
+        final_checkpoint = checkpoint_store.load()
+        assert final_checkpoint is not None
+        assert final_checkpoint.get_event_count() == 1
 
 
 class TestLambdaHandlerEndToEndIntegration:
@@ -593,16 +1228,9 @@ class TestLambdaHandlerEndToEndIntegration:
         # Call handler
         response = lambda_handler(test_event, mock_context)
 
-        # Verify response structure
+        # Verify simplified response format
         assert isinstance(response, dict)
-        assert "statusCode" in response
-        assert response["statusCode"] == 200
-
-        # Note: When implementation is complete, this test will verify:
-        # - Events are retrieved from S3
-        # - Events are validated using VisitEvent model
-        # - Checkpoint is created and saved to S3
-        # - Response includes processing metrics
+        assert response == {"statusCode": 200}
 
     def test_workflow_with_mixed_valid_invalid_events(
         self, s3_client, setup_s3_environment
@@ -693,15 +1321,9 @@ class TestLambdaHandlerEndToEndIntegration:
         # Call handler
         response = lambda_handler(test_event, mock_context)
 
-        # Verify response structure
+        # Verify simplified response format
         assert isinstance(response, dict)
-        assert "statusCode" in response
-        assert response["statusCode"] == 200
-
-        # Note: When implementation is complete, this test will verify:
-        # - Valid events are processed and included in checkpoint
-        # - Invalid events are logged but don't prevent processing
-        # - Response includes counts of successful and failed events
+        assert response == {"statusCode": 200}
 
     def test_incremental_processing_workflow(self, s3_client, setup_s3_environment):
         """Test incremental processing with existing checkpoint."""
@@ -764,13 +1386,6 @@ class TestLambdaHandlerEndToEndIntegration:
         # Call handler
         response = lambda_handler(test_event, mock_context)
 
-        # Verify response structure
+        # Verify simplified response format
         assert isinstance(response, dict)
-        assert "statusCode" in response
-        assert response["statusCode"] == 200
-
-        # Note: When implementation is complete, this test will verify:
-        # - Existing checkpoint is loaded
-        # - Only new events (after last timestamp) are processed
-        # - Updated checkpoint includes both old and new events
-        # - Response includes incremental processing metrics
+        assert response == {"statusCode": 200}

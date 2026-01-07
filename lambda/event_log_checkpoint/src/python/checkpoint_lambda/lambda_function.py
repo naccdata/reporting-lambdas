@@ -1,15 +1,76 @@
+import time
 from typing import Any
 
 from aws_lambda_powertools import Logger, Metrics, Tracer
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
-from checkpoint_lambda.checkpoint import Checkpoint
 from checkpoint_lambda.checkpoint_store import CheckpointStore
+from checkpoint_lambda.s3_retriever import S3EventRetriever
 
 # Initialize Lambda Powertools components
 logger = Logger()
 tracer = Tracer()
-metrics = Metrics()
+metrics = Metrics(namespace="EventLogCheckpoint")
+
+
+def _update_checkpoint(
+    source_bucket: str,
+    checkpoint_bucket: str,
+    checkpoint_key: str,
+    prefix: str,
+) -> None:
+    """Process events and log results.
+
+    Args:
+        source_bucket: S3 bucket containing event logs
+        checkpoint_bucket: S3 bucket for checkpoint file
+        checkpoint_key: S3 key for checkpoint file
+        prefix: S3 prefix to filter event logs
+    """
+    # Initialize CheckpointStore
+    checkpoint_store = CheckpointStore(checkpoint_bucket, checkpoint_key)
+    checkpoint = checkpoint_store.get_checkpoint()
+    since_timestamp = checkpoint.get_last_processed_timestamp()
+
+    # Initialize S3EventRetriever with timestamp filtering for incremental processing
+    event_retriever = S3EventRetriever(
+        bucket=source_bucket,
+        prefix=prefix,
+        since_timestamp=since_timestamp,
+    )
+
+    # Retrieve and validate new events
+    valid_events, validation_errors = event_retriever.retrieve_and_validate_events()
+
+    # Log validation errors if any
+    if validation_errors:
+        logger.warning(
+            "Validation errors encountered",
+            extra={"error_count": len(validation_errors)},
+        )
+
+    # Determine if we need to save a checkpoint
+    updated_checkpoint = checkpoint
+
+    if valid_events:
+        updated_checkpoint = checkpoint.add_events(valid_events)
+
+        # Only save if checkpoint contains events
+        if not updated_checkpoint.is_empty():
+            checkpoint_path = checkpoint_store.save(updated_checkpoint)
+            logger.info("Checkpoint saved", extra={"checkpoint_path": checkpoint_path})
+    else:
+        # For first run with no valid events, don't create empty checkpoint
+        # For incremental run with no new events, don't overwrite existing checkpoint
+        pass
+
+    # Emit CloudWatch metrics for processing statistics
+    metrics.add_metric(name="EventsProcessed", unit="Count", value=len(valid_events))
+    metrics.add_metric(name="EventsFailed", unit="Count", value=len(validation_errors))
+    if valid_events:
+        metrics.add_metric(
+            name="TotalEvents", unit="Count", value=updated_checkpoint.get_event_count()
+        )
 
 
 @tracer.capture_lambda_handler
@@ -28,26 +89,17 @@ def lambda_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, A
 
     Returns:
         dict: Response containing:
-            - statusCode: HTTP status code
-            - checkpoint_status: Status of checkpoint (first_run or incremental)
+            - statusCode: HTTP status code (200 for success, 4xx/5xx for errors)
+            - error: Error type (only present on failure)
+            - message: Error message (only present on failure)
     """
-    logger.info("Lambda handler started", extra={"event": event})
+    start_time = time.time()
 
     # Parse Lambda event parameters
     source_bucket = event.get("source_bucket")
     checkpoint_bucket = event.get("checkpoint_bucket")
     checkpoint_key = event.get("checkpoint_key")
     prefix = event.get("prefix", "")  # Optional parameter with default empty string
-
-    logger.info(
-        "Parsed event parameters",
-        extra={
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": checkpoint_key,
-            "prefix": prefix,
-        },
-    )
 
     # Validate required parameters
     if not checkpoint_bucket or not checkpoint_key:
@@ -62,38 +114,39 @@ def lambda_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, A
             "message": error_msg,
         }
 
-    # Initialize CheckpointStore
-    checkpoint_store = CheckpointStore(checkpoint_bucket, checkpoint_key)
-
-    # Try to load previous checkpoint, or create empty one for first run
-    checkpoint = checkpoint_store.load()
-    if checkpoint is None:
-        # First run - no previous checkpoint exists or couldn't be loaded
-        checkpoint = Checkpoint.empty()
-        checkpoint_status = "first_run"
-        logger.info("Created empty checkpoint for first run")
-        response = {
-            "statusCode": 200,
-            "checkpoint_status": checkpoint_status,
+    if not source_bucket:
+        error_msg = "Missing required parameter: source_bucket is required"
+        logger.error(error_msg)
+        return {
+            "statusCode": 400,
+            "error": "ValidationError",
+            "message": error_msg,
         }
 
-        logger.info("Lambda handler completed", extra={"response": response})
+    try:
+        # Process events
+        _update_checkpoint(source_bucket, checkpoint_bucket, checkpoint_key, prefix)
+    except Exception as e:
+        execution_time_ms = int((time.time() - start_time) * 1000)
+        error_msg = f"Lambda execution failed: {e!s}"
+        logger.error(
+            error_msg,
+            extra={"exception": str(e), "execution_time_ms": execution_time_ms},
+        )
 
-        return response
+        return {
+            "statusCode": 500,
+            "error": "InternalServerError",
+            "message": error_msg,
+        }
 
-    # Incremental run - loaded existing checkpoint
-    checkpoint_status = "incremental"
-    logger.info(
-        "Loaded existing checkpoint",
-        extra={"event_count": checkpoint.get_event_count()},
+    # Calculate execution time and emit CloudWatch metrics
+    execution_time_ms = int((time.time() - start_time) * 1000)
+
+    # Emit CloudWatch metrics (but don't return them in response)
+    # Note: Metrics will be emitted by the metrics decorator
+    metrics.add_metric(
+        name="ExecutionTime", unit="Milliseconds", value=execution_time_ms
     )
 
-    # Return response with checkpoint status
-    response = {
-        "statusCode": 200,
-        "checkpoint_status": checkpoint_status,
-    }
-
-    logger.info("Lambda handler completed", extra={"response": response})
-
-    return response
+    return {"statusCode": 200}
