@@ -8,6 +8,17 @@ filtering by center_label and counting events by action type.
 from datetime import datetime
 
 import polars as pl
+from checkpoint_lambda.query_validation import (
+    count_by_center_and_action,
+    count_events_by_action,
+    count_not_pass_qc_events,
+    filter_by_center_and_action,
+    filter_by_center_label,
+    get_action_counts,
+    get_actions_list,
+    get_centers_list,
+    validate_parquet_schema_supports_filtering,
+)
 from polars import DataFrame
 
 # Test data constants to prevent E501 line length errors
@@ -353,3 +364,218 @@ class TestQueryValidationBasic:
         assert filtered_result["center_label"].to_list() == [CENTER_ALPHA] * len(
             filtered_result
         )
+
+
+class TestQueryValidationUtilities:
+    """Unit tests for query validation utility functions."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.bucket = "test-query-bucket"
+        self.key = "checkpoints/test-query-checkpoint.parquet"
+
+    def create_sample_checkpoint_data(self) -> DataFrame:
+        """Create sample checkpoint data for testing queries.
+
+        Returns:
+            DataFrame with diverse event data for testing filtering and counting
+        """
+        sample_data = {
+            "action": [
+                ACTION_SUBMIT,
+                ACTION_PASS_QC,
+                ACTION_NOT_PASS_QC,
+                ACTION_SUBMIT,
+                ACTION_DELETE,
+                ACTION_PASS_QC,
+            ],
+            "study": ["adrc", "adrc", "adrc", "adrc", "adrc", "adrc"],
+            "pipeline_adcid": [42, 42, 42, 43, 43, 43],
+            "project_label": [
+                "ingest",
+                "ingest",
+                "ingest",
+                "ingest",
+                "ingest",
+                "ingest",
+            ],
+            "center_label": [
+                CENTER_ALPHA,
+                CENTER_ALPHA,
+                CENTER_ALPHA,
+                CENTER_BETA,
+                CENTER_BETA,
+                CENTER_GAMMA,
+            ],
+            "gear_name": [
+                "form-gear",
+                "form-gear",
+                "form-gear",
+                "form-gear",
+                "form-gear",
+                "form-gear",
+            ],
+            "ptid": [
+                PTID_ABC123,
+                PTID_ABC123,
+                PTID_XYZ789,
+                PTID_DEF456,
+                PTID_DEF456,
+                PTID_GHI789,
+            ],
+            "visit_date": [
+                VISIT_DATE_JAN15,
+                VISIT_DATE_JAN15,
+                VISIT_DATE_JAN16,
+                VISIT_DATE_JAN16,
+                VISIT_DATE_JAN16,
+                VISIT_DATE_JAN17,
+            ],
+            "visit_number": ["01", "01", "02", "01", "01", "03"],
+            "datatype": ["form", "form", "form", "form", "form", "form"],
+            "module": ["UDS", "UDS", "UDS", "FTLD", "FTLD", "LBD"],
+            "packet": ["I", "I", "A", "I", "I", "B"],
+            "timestamp": [
+                TIMESTAMP_JAN15_10AM,
+                TIMESTAMP_JAN15_11AM,
+                TIMESTAMP_JAN16_10AM,
+                TIMESTAMP_JAN16_11AM,
+                TIMESTAMP_JAN16_11AM,
+                TIMESTAMP_JAN17_10AM,
+            ],
+        }
+        return DataFrame(sample_data)
+
+    def test_filter_by_center_label_utility(self):
+        """Test filter_by_center_label utility function."""
+        sample_df = self.create_sample_checkpoint_data()
+
+        # Test filtering by center alpha
+        alpha_result = filter_by_center_label(sample_df, CENTER_ALPHA)
+        assert len(alpha_result) == 3
+        assert alpha_result["center_label"].to_list() == [CENTER_ALPHA] * 3
+
+        # Test filtering by center beta
+        beta_result = filter_by_center_label(sample_df, CENTER_BETA)
+        assert len(beta_result) == 2
+        assert beta_result["center_label"].to_list() == [CENTER_BETA] * 2
+
+        # Test filtering by non-existent center
+        empty_result = filter_by_center_label(sample_df, "nonexistent")
+        assert len(empty_result) == 0
+
+    def test_count_events_by_action_utility(self):
+        """Test count_events_by_action utility function."""
+        sample_df = self.create_sample_checkpoint_data()
+
+        # Test counting different action types
+        assert count_events_by_action(sample_df, ACTION_SUBMIT) == 2
+        assert count_events_by_action(sample_df, ACTION_PASS_QC) == 2
+        assert count_events_by_action(sample_df, ACTION_NOT_PASS_QC) == 1
+        assert count_events_by_action(sample_df, ACTION_DELETE) == 1
+
+        # Test counting non-existent action
+        assert count_events_by_action(sample_df, "nonexistent") == 0
+
+    def test_count_not_pass_qc_events_utility(self):
+        """Test count_not_pass_qc_events convenience function."""
+        sample_df = self.create_sample_checkpoint_data()
+
+        # Test the convenience function
+        assert count_not_pass_qc_events(sample_df) == 1
+
+    def test_get_action_counts_utility(self):
+        """Test get_action_counts utility function."""
+        sample_df = self.create_sample_checkpoint_data()
+
+        action_counts = get_action_counts(sample_df)
+
+        expected_counts = {
+            ACTION_DELETE: 1,
+            ACTION_NOT_PASS_QC: 1,
+            ACTION_PASS_QC: 2,
+            ACTION_SUBMIT: 2,
+        }
+
+        assert action_counts == expected_counts
+
+    def test_filter_by_center_and_action_utility(self):
+        """Test filter_by_center_and_action utility function."""
+        sample_df = self.create_sample_checkpoint_data()
+
+        # Test filtering by center alpha and not-pass-qc action
+        alpha_not_pass_qc = filter_by_center_and_action(
+            sample_df, CENTER_ALPHA, ACTION_NOT_PASS_QC
+        )
+        assert len(alpha_not_pass_qc) == 1
+        assert alpha_not_pass_qc["center_label"].to_list() == [CENTER_ALPHA]
+        assert alpha_not_pass_qc["action"].to_list() == [ACTION_NOT_PASS_QC]
+
+        # Test filtering by center beta and not-pass-qc action (should be empty)
+        beta_not_pass_qc = filter_by_center_and_action(
+            sample_df, CENTER_BETA, ACTION_NOT_PASS_QC
+        )
+        assert len(beta_not_pass_qc) == 0
+
+    def test_count_by_center_and_action_utility(self):
+        """Test count_by_center_and_action utility function."""
+        sample_df = self.create_sample_checkpoint_data()
+
+        # Test counting by center and action
+        assert (
+            count_by_center_and_action(sample_df, CENTER_ALPHA, ACTION_NOT_PASS_QC) == 1
+        )
+        assert (
+            count_by_center_and_action(sample_df, CENTER_BETA, ACTION_NOT_PASS_QC) == 0
+        )
+        assert count_by_center_and_action(sample_df, CENTER_ALPHA, ACTION_SUBMIT) == 1
+
+    def test_validate_parquet_schema_supports_filtering(self):
+        """Test validate_parquet_schema_supports_filtering utility function."""
+        sample_df = self.create_sample_checkpoint_data()
+
+        # Test that our sample data has a valid schema
+        assert validate_parquet_schema_supports_filtering(sample_df) is True
+
+    def test_get_centers_list_utility(self):
+        """Test get_centers_list utility function."""
+        sample_df = self.create_sample_checkpoint_data()
+
+        centers = get_centers_list(sample_df)
+        expected_centers = [CENTER_ALPHA, CENTER_BETA, CENTER_GAMMA]
+
+        assert centers == expected_centers
+
+    def test_get_actions_list_utility(self):
+        """Test get_actions_list utility function."""
+        sample_df = self.create_sample_checkpoint_data()
+
+        actions = get_actions_list(sample_df)
+        expected_actions = [
+            ACTION_DELETE,
+            ACTION_NOT_PASS_QC,
+            ACTION_PASS_QC,
+            ACTION_SUBMIT,
+        ]
+
+        assert actions == expected_actions
+
+    def test_utility_functions_with_empty_dataframe(self):
+        """Test utility functions with empty DataFrame."""
+        # Import here to avoid import issues during test discovery
+        from checkpoint_lambda.checkpoint import Checkpoint
+
+        empty_df = Checkpoint.empty().dataframe
+
+        # Test filtering functions return empty results
+        assert len(filter_by_center_label(empty_df, CENTER_ALPHA)) == 0
+        assert count_events_by_action(empty_df, ACTION_SUBMIT) == 0
+        assert count_not_pass_qc_events(empty_df) == 0
+
+        # Test aggregation functions return empty results
+        assert get_action_counts(empty_df) == {}
+        assert get_centers_list(empty_df) == []
+        assert get_actions_list(empty_df) == []
+
+        # Test schema validation (empty DataFrame should still have correct schema)
+        assert validate_parquet_schema_supports_filtering(empty_df) is True
