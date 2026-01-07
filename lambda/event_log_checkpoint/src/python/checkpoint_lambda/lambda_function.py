@@ -30,7 +30,6 @@ def lambda_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, A
         dict: Response containing:
             - statusCode: HTTP status code
             - checkpoint_status: Status of checkpoint (first_run or incremental)
-            - checkpoint_exists: Whether previous checkpoint existed
     """
     logger.info("Lambda handler started", extra={"event": event})
 
@@ -52,7 +51,10 @@ def lambda_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, A
 
     # Validate required parameters
     if not checkpoint_bucket or not checkpoint_key:
-        error_msg = "Missing required parameters: checkpoint_bucket and checkpoint_key are required"
+        error_msg = (
+            "Missing required parameters: checkpoint_bucket "
+            "and checkpoint_key are required"
+        )
         logger.error(error_msg)
         return {
             "statusCode": 400,
@@ -63,32 +65,33 @@ def lambda_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, A
     # Initialize CheckpointStore
     checkpoint_store = CheckpointStore(checkpoint_bucket, checkpoint_key)
 
-    # Check if previous checkpoint exists
-    checkpoint_exists = checkpoint_store.exists()
-    logger.info(
-        "Checkpoint existence check", extra={"checkpoint_exists": checkpoint_exists}
-    )
-
-    # Load previous checkpoint or create empty one for first run
-    if checkpoint_exists:
-        # Incremental run - load existing checkpoint
-        checkpoint = checkpoint_store.load()
-        checkpoint_status = "incremental"
-        logger.info(
-            "Loaded existing checkpoint",
-            extra={"event_count": checkpoint.get_event_count()},
-        )
-    else:
-        # First run - create empty checkpoint
+    # Try to load previous checkpoint, or create empty one for first run
+    checkpoint = checkpoint_store.load()
+    if checkpoint is None:
+        # First run - no previous checkpoint exists or couldn't be loaded
         checkpoint = Checkpoint.empty()
         checkpoint_status = "first_run"
         logger.info("Created empty checkpoint for first run")
+        response = {
+            "statusCode": 200,
+            "checkpoint_status": checkpoint_status,
+        }
+
+        logger.info("Lambda handler completed", extra={"response": response})
+
+        return response
+
+    # Incremental run - loaded existing checkpoint
+    checkpoint_status = "incremental"
+    logger.info(
+        "Loaded existing checkpoint",
+        extra={"event_count": checkpoint.get_event_count()},
+    )
 
     # Return response with checkpoint status
     response = {
         "statusCode": 200,
         "checkpoint_status": checkpoint_status,
-        "checkpoint_exists": checkpoint_exists,
     }
 
     logger.info("Lambda handler completed", extra={"response": response})
