@@ -3,8 +3,9 @@ from typing import Any
 
 from aws_lambda_powertools import Logger, Metrics, Tracer
 from aws_lambda_powertools.utilities.typing import LambdaContext
+from botocore.exceptions import ClientError
 
-from checkpoint_lambda.checkpoint_store import CheckpointStore
+from checkpoint_lambda.checkpoint_store import CheckpointError, CheckpointStore
 from checkpoint_lambda.s3_retriever import S3EventRetriever
 
 # Initialize Lambda Powertools components
@@ -13,24 +14,61 @@ tracer = Tracer()
 metrics = Metrics(namespace="EventLogCheckpoint")
 
 
-def _update_checkpoint(
+def _update_checkpoint(  # noqa: C901
     source_bucket: str,
     checkpoint_bucket: str,
     checkpoint_key: str,
     prefix: str,
-) -> None:
-    """Process events and log results.
+    start_time: float,
+) -> dict[str, Any]:
+    """Process events and return response.
 
     Args:
         source_bucket: S3 bucket containing event logs
         checkpoint_bucket: S3 bucket for checkpoint file
         checkpoint_key: S3 key for checkpoint file
         prefix: S3 prefix to filter event logs
+        start_time: Lambda execution start time for error logging
+
+    Returns:
+        dict: Response object with statusCode and optional error details
     """
     # Initialize CheckpointStore
     checkpoint_store = CheckpointStore(checkpoint_bucket, checkpoint_key)
-    checkpoint = checkpoint_store.get_checkpoint()
-    since_timestamp = checkpoint.get_last_processed_timestamp()
+
+    try:
+        checkpoint = checkpoint_store.get_checkpoint()
+        since_timestamp = checkpoint.get_last_processed_timestamp()
+    except CheckpointError as e:
+        execution_time_ms = int((time.time() - start_time) * 1000)
+        error_msg = f"Checkpoint error: {e!s}"
+        logger.error(
+            error_msg,
+            extra={"exception": str(e), "execution_time_ms": execution_time_ms},
+        )
+        return {
+            "statusCode": 500,
+            "error": "CheckpointError",
+            "message": error_msg,
+        }
+    except ClientError as e:
+        execution_time_ms = int((time.time() - start_time) * 1000)
+        error_code = e.response.get("Error", {}).get("Code", "Unknown")
+        error_message = e.response.get("Error", {}).get("Message", str(e))
+        error_msg = f"S3 error: {error_message}"
+        logger.error(
+            f"S3 permission error accessing checkpoint bucket: {e}",
+            extra={
+                "error_code": error_code,
+                "error_message": error_message,
+                "execution_time_ms": execution_time_ms,
+            },
+        )
+        return {
+            "statusCode": 500,
+            "error": "InternalServerError",
+            "message": error_msg,
+        }
 
     # Initialize S3EventRetriever with timestamp filtering for incremental processing
     event_retriever = S3EventRetriever(
@@ -40,10 +78,35 @@ def _update_checkpoint(
     )
 
     # Retrieve and validate new events
-    valid_events, validation_errors = event_retriever.retrieve_and_validate_events()
+    try:
+        valid_events, validation_errors = event_retriever.retrieve_and_validate_events()
+    except ClientError as e:
+        execution_time_ms = int((time.time() - start_time) * 1000)
+        error_code = e.response.get("Error", {}).get("Code", "Unknown")
+        error_message = e.response.get("Error", {}).get("Message", str(e))
+        error_msg = f"S3 error: {error_message}"
+        logger.error(
+            f"S3 permission error accessing source bucket: {e}",
+            extra={
+                "error_code": error_code,
+                "error_message": error_message,
+                "execution_time_ms": execution_time_ms,
+            },
+        )
+        return {
+            "statusCode": 500,
+            "error": "InternalServerError",
+            "message": error_msg,
+        }
 
     # Log validation errors if any
     if validation_errors:
+        # Log individual validation errors for debugging first
+        for error in validation_errors:
+            logger.warning(
+                f"Validation error in file {error['source_key']}: {error['errors']}"
+            )
+        # Then log summary
         logger.warning(
             "Validation errors encountered",
             extra={"error_count": len(validation_errors)},
@@ -57,8 +120,41 @@ def _update_checkpoint(
 
         # Only save if checkpoint contains events
         if not updated_checkpoint.is_empty():
-            checkpoint_path = checkpoint_store.save(updated_checkpoint)
-            logger.info("Checkpoint saved", extra={"checkpoint_path": checkpoint_path})
+            try:
+                checkpoint_path = checkpoint_store.save(updated_checkpoint)
+                logger.info(
+                    "Checkpoint saved", extra={"checkpoint_path": checkpoint_path}
+                )
+            except CheckpointError as e:
+                execution_time_ms = int((time.time() - start_time) * 1000)
+                error_msg = f"Checkpoint error: {e!s}"
+                logger.error(
+                    f"Failed to save checkpoint: {e}",
+                    extra={"exception": str(e), "execution_time_ms": execution_time_ms},
+                )
+                return {
+                    "statusCode": 500,
+                    "error": "CheckpointError",
+                    "message": error_msg,
+                }
+            except ClientError as e:
+                execution_time_ms = int((time.time() - start_time) * 1000)
+                error_code = e.response.get("Error", {}).get("Code", "Unknown")
+                error_message = e.response.get("Error", {}).get("Message", str(e))
+                error_msg = f"S3 error: {error_message}"
+                logger.error(
+                    f"S3 permission error saving checkpoint: {e}",
+                    extra={
+                        "error_code": error_code,
+                        "error_message": error_message,
+                        "execution_time_ms": execution_time_ms,
+                    },
+                )
+                return {
+                    "statusCode": 500,
+                    "error": "InternalServerError",
+                    "message": error_msg,
+                }
     else:
         # For first run with no valid events, don't create empty checkpoint
         # For incremental run with no new events, don't overwrite existing checkpoint
@@ -71,6 +167,9 @@ def _update_checkpoint(
         metrics.add_metric(
             name="TotalEvents", unit="Count", value=updated_checkpoint.get_event_count()
         )
+
+    # Return success response
+    return {"statusCode": 200}
 
 
 @tracer.capture_lambda_handler
@@ -125,7 +224,10 @@ def lambda_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, A
 
     try:
         # Process events
-        _update_checkpoint(source_bucket, checkpoint_bucket, checkpoint_key, prefix)
+        response = _update_checkpoint(
+            source_bucket, checkpoint_bucket, checkpoint_key, prefix, start_time
+        )
+
     except Exception as e:
         execution_time_ms = int((time.time() - start_time) * 1000)
         error_msg = f"Lambda execution failed: {e!s}"
@@ -140,13 +242,15 @@ def lambda_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, A
             "message": error_msg,
         }
 
-    # Calculate execution time and emit CloudWatch metrics
-    execution_time_ms = int((time.time() - start_time) * 1000)
+    # If response indicates an error, return it directly
+    if response["statusCode"] == 200:
+        # Calculate execution time and emit CloudWatch metrics
+        execution_time_ms = int((time.time() - start_time) * 1000)
 
-    # Emit CloudWatch metrics (but don't return them in response)
-    # Note: Metrics will be emitted by the metrics decorator
-    metrics.add_metric(
-        name="ExecutionTime", unit="Milliseconds", value=execution_time_ms
-    )
+        # Emit CloudWatch metrics (but don't return them in response)
+        # Note: Metrics will be emitted by the metrics decorator
+        metrics.add_metric(
+            name="ExecutionTime", unit="Milliseconds", value=execution_time_ms
+        )
 
-    return {"statusCode": 200}
+    return response
