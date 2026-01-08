@@ -153,9 +153,9 @@ lambda/user_management/
 ├── outputs.tf                 # Output values
 ├── src/python/
 │   └── user_management_lambda/
-│       ├── BUILD              # Build configuration
-│       ├── lambda_function.py # Main handler
-│       └── business_logic.py  # Business logic (optional)
+│       ├── BUILD                    # Build configuration
+│       ├── lambda_function.py       # Main handler
+│       └── reporting_processor.py   # Reporting processor (optional)
 └── test/python/
     ├── BUILD                  # Test build configuration
     ├── test_lambda_function.py
@@ -376,9 +376,9 @@ python_aws_lambda_layer(
 ### Test Organization
 ```
 test/python/
-├── unit/                      # Unit tests
+├── unit/                           # Unit tests
 │   ├── test_lambda_function.py
-│   └── test_business_logic.py
+│   └── test_reporting_processor.py
 ├── integration/               # Integration tests
 │   ├── test_database_integration.py
 │   └── test_api_integration.py

@@ -61,13 +61,13 @@ lambda/{lambda_name}/
 ├── README.md                   # Lambda-specific documentation
 ├── src/python/
 │   └── {lambda_name}_lambda/
-│       ├── BUILD               # Pants build configuration
-│       ├── lambda_function.py  # Main handler
-│       └── business_logic.py   # Business logic modules
+│       ├── BUILD                    # Pants build configuration
+│       ├── lambda_function.py       # Main handler
+│       └── reporting_processor.py   # Reporting processor modules
 └── test/python/
-    ├── BUILD                   # Test build configuration
-    ├── test_lambda_function.py # Handler tests
-    └── test_business_logic.py  # Business logic tests
+    ├── BUILD                        # Test build configuration
+    ├── test_lambda_function.py      # Handler tests
+    └── test_reporting_processor.py  # Reporting processor tests
 ```
 
 ## Components and Interfaces
@@ -163,7 +163,7 @@ class ProcessingResult(BaseModel):
 The lambda template provides a standardized starting point for new reporting lambdas:
 
 1. **Handler Template**: Basic lambda handler with error handling and logging
-2. **Business Logic Template**: Separation of concerns with dedicated business logic module
+2. **Reporting Processor Template**: Separation of concerns with dedicated reporting processor module
 3. **Terraform Template**: Standard infrastructure configuration
 4. **Test Templates**: Unit and property-based test examples
 5. **BUILD Configuration**: Proper dependency management and build targets
@@ -183,7 +183,7 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, A
         # Parse and validate input
         parsed_event = parse_input_event(event)
         
-        # Process business logic
+        # Process reporting logic
         result = process_data(parsed_event)
         
         # Return standardized response
@@ -533,7 +533,7 @@ The repository should contain a `common/` directory with subdirectories for `dat
 **Validates: Requirements 1.1, 1.2**
 
 **Example 2: Lambda template completeness**
-The lambda template should include all required files: handler code, business logic, Terraform configuration, BUILD files, and test examples
+The lambda template should include all required files: handler code, reporting processor, Terraform configuration, BUILD files, and test examples
 **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5**
 
 **Example 3: Existing lambda preservation**
