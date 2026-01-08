@@ -1,29 +1,78 @@
-# Reporting Lambdas
+# Reporting Lambdas Monorepo
 
-A collection of AWS Lambda functions for analytical reporting, including event log processing that creates queryable checkpoint parquet files. The primary Lambda supports incremental processing, validating events against schema specifications, and aggregating data for monthly reporting queries.
+A comprehensive monorepo for hosting multiple AWS Lambda functions that extract data from various sources and create parquet tables for analytical use. This repository provides shared utilities, standardized patterns, and consistent tooling for developing data processing lambdas that support analytical reporting workflows.
 
 ## Overview
 
-This Lambda function scrapes event log files from the NACC Flywheel instance stored in S3, validates them using Pydantic models, and creates/updates a checkpoint parquet file optimized for analytical queries. The system follows an incremental processing approach: it reads the previous checkpoint (if it exists), retrieves only new JSON event files since the last checkpoint, validates them, and merges them to create an updated checkpoint file.
+This monorepo contains multiple reporting lambdas that extract data from different sources (APIs, databases, S3 buckets, etc.) and transform them into parquet files optimized for analytical queries. Each lambda follows consistent patterns for data validation, error handling, and incremental processing while leveraging shared code for common functionality.
+
+### Monorepo Benefits
+
+- **Shared Code**: Common utilities, models, and AWS helpers reduce duplication
+- **Consistent Patterns**: Standardized lambda structure and development workflows
+- **Unified Tooling**: Single build system, testing framework, and deployment pipeline
+- **Scalable Organization**: Easy to add new reporting lambdas following established patterns
 
 ### Key Features
 
-- **Incremental Processing**: Only processes new events since the last checkpoint, significantly improving performance
-- **Schema Validation**: Uses Pydantic models to validate event structure and data types
-- **Error Resilience**: Continues processing valid events even when some files fail validation
-- **Analytical Optimization**: Outputs parquet files optimized for monthly reporting queries
-- **Observability**: Full logging, tracing, and metrics using AWS Lambda Powertools
-- **Event Evolution Support**: Preserves all event versions to track data completeness over time
+- **Monorepo Architecture**: Multiple reporting lambdas with shared code and consistent patterns
+- **Common Code Libraries**: Reusable utilities for data processing, AWS operations, and validation
+- **Incremental Processing**: Lambdas support efficient incremental data processing patterns
+- **Schema Validation**: Standardized Pydantic models for data validation across lambdas
+- **Error Resilience**: Robust error handling that continues processing valid data
+- **Analytical Optimization**: Parquet output optimized for analytical queries
+- **Observability**: Comprehensive logging, tracing, and metrics using AWS Lambda Powertools
+- **Template-Based Development**: Standardized lambda template for rapid development
 
-## Architecture
+## Repository Structure
 
-The system follows a pipeline architecture with these components:
+The monorepo is organized to support multiple reporting lambdas with shared code:
 
-1. **CheckpointReader**: Reads previous checkpoint and determines what new events to process
-2. **S3EventRetriever**: Retrieves event log files from S3 with timestamp filtering
-3. **EventValidator**: Validates events using Pydantic models
-4. **CheckpointMerger**: Merges previous checkpoint data with newly validated events
-5. **ParquetWriter**: Writes merged events to parquet format and uploads to S3
+```
+reporting-lambdas/
+├── .devcontainer/              # Dev container configuration
+├── .github/                    # GitHub workflows and templates
+├── .kiro/                      # Kiro specs and steering files
+├── bin/                        # Dev container management scripts
+├── common/                     # Shared code across all lambdas
+│   ├── src/python/
+│   │   ├── data_processing/    # Parquet, validation utilities
+│   │   ├── aws_helpers/        # S3, Lambda utilities
+│   │   ├── models/             # Common Pydantic models
+│   │   └── utils/              # General utilities
+│   └── test/python/            # Tests for common modules
+├── lambda/                     # Lambda functions directory
+│   ├── event_log_checkpoint/   # Event log processing lambda
+│   └── template/               # Template for new lambdas
+├── terraform/                  # Global infrastructure modules
+│   └── modules/                # Reusable Terraform modules
+├── context/                    # Documentation and examples
+├── BUILD                       # Root build configuration
+├── pants.toml                  # Pants build system configuration
+├── requirements.txt            # Project dependencies
+└── README.md                   # This file
+```
+
+### Lambda Organization
+
+Each lambda follows a consistent structure:
+
+```
+lambda/{lambda_name}/
+├── main.tf                     # Terraform configuration
+├── variables.tf                # Terraform variables
+├── outputs.tf                  # Terraform outputs
+├── README.md                   # Lambda-specific documentation
+├── src/python/
+│   └── {lambda_name}_lambda/
+│       ├── BUILD                    # Pants build configuration
+│       ├── lambda_function.py       # Main handler
+│       └── reporting_processor.py   # Business logic
+└── test/python/
+    ├── BUILD                        # Test build configuration
+    ├── test_lambda_function.py      # Handler tests
+    └── test_reporting_processor.py  # Business logic tests
+```
 
 ### Technology Stack
 
@@ -37,335 +86,313 @@ The system follows a pipeline architecture with these components:
   - Polars (DataFrame operations and parquet generation)
   - Boto3 (AWS SDK - included with Powertools)
 
-## Development Workflow
+## Lambda Development Workflows
 
-All development uses the established dev container workflow:
+The monorepo supports both individual lambda development and multi-lambda workflows.
 
-### Starting Development
+### Individual Lambda Development
+
+For working on a single lambda:
 
 ```bash
+# Start dev container
 ./bin/start-devcontainer.sh
+
+# Run quality checks for specific lambda
+./bin/exec-in-devcontainer.sh pants fix lambda/{lambda_name}::
+./bin/exec-in-devcontainer.sh pants lint lambda/{lambda_name}::
+./bin/exec-in-devcontainer.sh pants check lambda/{lambda_name}::
+
+# Test specific lambda
+./bin/exec-in-devcontainer.sh pants test lambda/{lambda_name}/test/python::
+
+# Build specific lambda
+./bin/exec-in-devcontainer.sh pants package lambda/{lambda_name}/src/python/{lambda_name}_lambda::
+
+# Deploy specific lambda
+./bin/exec-in-devcontainer.sh bash -c "cd lambda/{lambda_name} && terraform apply"
 ```
 
-### Running Quality Checks
+### Multi-Lambda Development
+
+For changes affecting multiple lambdas or common code:
 
 ```bash
-./bin/exec-in-devcontainer.sh pants fix lint check test ::
+# Start dev container
+./bin/start-devcontainer.sh
+
+# Run quality checks across entire repository
+./bin/exec-in-devcontainer.sh pants fix ::
+./bin/exec-in-devcontainer.sh pants lint ::
+./bin/exec-in-devcontainer.sh pants check ::
+
+# Test all lambdas and common code
+./bin/exec-in-devcontainer.sh pants test ::
+
+# Build all lambdas
+./bin/exec-in-devcontainer.sh pants package lambda::
+
+# Test affected lambdas after common code changes
+./bin/exec-in-devcontainer.sh pants test --changed-since=HEAD~1 ::
 ```
 
-### Building Lambda
+### Creating New Lambdas
+
+Use the lambda template to create new reporting lambdas:
 
 ```bash
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda::
+# Copy template to new lambda directory
+cp -r templates/lambda-template lambda/{new_lambda_name}
+
+# Update lambda-specific files (see template README for details)
+# - Update Terraform variables
+# - Customize handler and business logic
+# - Update BUILD files with correct dependencies
+
+# Generate BUILD files
+./bin/exec-in-devcontainer.sh pants tailor lambda/{new_lambda_name}::
+
+# Test new lambda
+./bin/exec-in-devcontainer.sh pants test lambda/{new_lambda_name}/test/python::
 ```
 
-### Running Tests
+## Common Code Libraries
+
+The `common/` directory provides shared utilities used across all lambdas:
+
+### Data Processing (`common/src/python/data_processing/`)
+
+- **ParquetWriter**: Standardized parquet file creation with compression and schema validation
+- **DataValidator**: Common validation patterns for reporting data
+- **SchemaManager**: Schema evolution and compatibility checking
+
+### AWS Helpers (`common/src/python/aws_helpers/`)
+
+- **S3Manager**: S3 operations with retry logic and error handling
+- **LambdaUtils**: Lambda-specific utilities and decorators
+- **CloudWatchLogger**: Structured logging for reporting lambdas
+
+### Models (`common/src/python/models/`)
+
+- **ReportingEvent**: Base model for lambda execution metadata
+- **DataSourceConfig**: Configuration for data sources
+- **ProcessingMetrics**: Standardized processing result format
+
+### Utils (`common/src/python/utils/`)
+
+- **Error Handling**: Standardized error handling utilities
+- **Date Utilities**: Common date/time processing functions
+- **String Processing**: Text processing and validation utilities
+
+## Current Lambdas
+
+### Event Log Checkpoint (`lambda/event_log_checkpoint/`)
+
+Processes event log files from S3, validates them using Pydantic models, and creates/updates checkpoint parquet files optimized for analytical queries.
+
+**Key Features:**
+- Incremental processing for performance optimization
+- Schema validation using Pydantic models
+- Error resilience with partial failure handling
+- Event evolution support for audit trails
+
+**Data Sources:** S3 event log files
+**Output:** Parquet checkpoint files for analytical queries
+
+See [lambda/event_log_checkpoint/README.md](lambda/event_log_checkpoint/README.md) for detailed documentation.
+
+## Build System
+
+The monorepo uses Pants build system for efficient dependency management and builds:
+
+### Building Individual Lambdas
 
 ```bash
-./bin/exec-in-devcontainer.sh pants test lambda/event_log_checkpoint/test/python::
+# Build specific lambda
+./bin/exec-in-devcontainer.sh pants package lambda/{lambda_name}/src/python/{lambda_name}_lambda::
+
+# Build lambda layers
+./bin/exec-in-devcontainer.sh pants package lambda/{lambda_name}/src/python/{lambda_name}_lambda:powertools
+./bin/exec-in-devcontainer.sh pants package lambda/{lambda_name}/src/python/{lambda_name}_lambda:data_processing
 ```
 
-### Interactive Development
+### Building All Lambdas
 
 ```bash
-./bin/terminal.sh  # For exploration and debugging only
+# Build all lambdas at once
+./bin/exec-in-devcontainer.sh pants package lambda::
+
+# Build with dependency tracking
+./bin/exec-in-devcontainer.sh pants package --changed-since=HEAD~1 lambda::
 ```
 
-### Stopping Development
+### Common Code Dependencies
 
-```bash
-./bin/stop-devcontainer.sh
-```
+The build system automatically resolves dependencies on common code:
 
-**Important**: Use `./bin/exec-in-devcontainer.sh <command>` for all pants and terraform commands. Terraform is only available inside the dev container.
-
-## Project Structure
-
-```
-lambda/event_log_checkpoint/
-├── src/python/checkpoint_lambda/
-│   ├── lambda_function.py          # Main Lambda handler
-│   ├── models.py                   # Pydantic VisitEvent model
-│   ├── checkpoint_reader.py        # Reads previous checkpoints
-│   ├── s3_retriever.py            # Retrieves events from S3
-│   ├── validator.py               # Validates events
-│   ├── merger.py                  # Merges checkpoint data
-│   └── parquet_writer.py          # Writes parquet files
-├── test/python/                   # Unit and property tests
-├── main.tf                        # Terraform configuration
-├── variables.tf                   # Terraform variables
-└── outputs.tf                     # Terraform outputs
-```
-
-## Event Schema
-
-The Lambda processes visit events with the following structure:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| action | str | Yes | Event type: submit, pass-qc, not-pass-qc, delete |
-| study | str | Yes | Study identifier (default: "adrc") |
-| pipeline_adcid | int | Yes | Pipeline/center identifier |
-| project_label | str | Yes | Flywheel project label |
-| center_label | str | Yes | Center/group label |
-| gear_name | str | Yes | Gear that logged the event |
-| ptid | str | Yes | Participant ID (pattern: ^[A-Z0-9]+$, max 10 chars) |
-| visit_date | date | Yes | Visit date (ISO format YYYY-MM-DD) |
-| visit_number | str | Yes | Visit number |
-| datatype | str | Yes | Data type (form, dicom, etc.) |
-| module | str | No | Module name (UDS, FTLD, etc.) |
-| packet | str | No | Packet type (I, F, etc.) |
-| timestamp | datetime | Yes | When action occurred (ISO 8601) |
+- Lambdas declare dependencies on common modules in their BUILD files
+- Pants tracks changes to common code and rebuilds affected lambdas
+- Common code is included in lambda packages automatically
 
 ## Deployment
 
+### Infrastructure as Code
+
+Each lambda includes Terraform configuration for infrastructure deployment:
+
+- **Individual Deployment**: Deploy single lambdas independently
+- **Batch Deployment**: Deploy multiple lambdas using shared modules
+- **Common Infrastructure**: Reusable Terraform modules for standard patterns
+
 ### Lambda Layer Strategy
 
-The deployment uses a multi-layer approach for optimal performance:
+All lambdas use a consistent multi-layer approach:
 
 #### Layer 1: AWS Lambda Powertools
-
 - **Contents**: AWS Lambda Powertools (includes boto3)
 - **Size**: ~5MB
 - **Update Frequency**: Low
 
 #### Layer 2: Data Processing
-
 - **Contents**: Pydantic and Polars libraries
 - **Size**: ~15-20MB
 - **Update Frequency**: Medium
 
-### Building and Deploying
+#### Layer 3: Function Code
+- **Contents**: Lambda-specific code and common utilities
+- **Size**: <1MB
+- **Update Frequency**: High
 
-#### Build Lambda Packages
-
-```bash
-# Build Lambda function
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:lambda
-
-# Build Powertools layer
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:powertools
-
-# Build data processing layer
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:data_processing
-```
-
-#### Deploy with Terraform
-
-From the lambda directory:
+### Deployment Commands
 
 ```bash
-# Standard deployment (reuses existing layers)
-./bin/exec-in-devcontainer.sh bash -c "cd lambda/event_log_checkpoint && terraform apply"
+# Deploy individual lambda
+./bin/exec-in-devcontainer.sh bash -c "cd lambda/{lambda_name} && terraform apply"
 
-# Force layer updates
-./bin/exec-in-devcontainer.sh bash -c "cd lambda/event_log_checkpoint && terraform apply -var='reuse_existing_layers=false'"
+# Deploy with layer updates
+./bin/exec-in-devcontainer.sh bash -c "cd lambda/{lambda_name} && terraform apply -var='reuse_existing_layers=false'"
 
 # Function-only deployment (fastest for code changes)
-./bin/exec-in-devcontainer.sh bash -c "cd lambda/event_log_checkpoint && terraform apply -target=aws_lambda_function.event_log_checkpoint"
-```
-
-### Environment Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| SOURCE_BUCKET | S3 bucket containing event logs | nacc-events |
-| CHECKPOINT_BUCKET | S3 bucket for checkpoint files | nacc-checkpoints |
-| CHECKPOINT_KEY | S3 key for checkpoint parquet file | checkpoints/events.parquet |
-| LOG_LEVEL | Logging level | INFO |
-| POWERTOOLS_SERVICE_NAME | Service name for tracing | event-log-checkpoint |
-
-## Usage
-
-### Lambda Event Format
-
-```json
-{
-  "source_bucket": "nacc-event-logs",
-  "prefix": "logs/",
-  "checkpoint_bucket": "nacc-checkpoints", 
-  "checkpoint_key": "checkpoints/events.parquet"
-}
-```
-
-### Response Format
-
-```json
-{
-  "statusCode": 200,
-  "checkpoint_path": "s3://nacc-checkpoints/checkpoints/events.parquet",
-  "new_events_processed": 150,
-  "total_events": 10250,
-  "events_failed": 2,
-  "last_processed_timestamp": "2024-01-15T14:30:00Z",
-  "execution_time_ms": 45000
-}
-```
-
-## Incremental Processing
-
-The Lambda supports efficient incremental processing:
-
-### First Run
-
-- Processes all event log files in S3
-- Creates initial checkpoint parquet file
-- Returns total events processed
-
-### Subsequent Runs
-
-- Reads previous checkpoint to get last processed timestamp
-- Only retrieves and processes events with timestamp > last checkpoint
-- Merges new events with previous checkpoint data
-- Overwrites checkpoint file with merged data
-
-This approach provides significant performance benefits:
-
-- **Reduced S3 Operations**: Only reads new files
-- **Lower Memory Usage**: Only processes new events
-- **Faster Execution**: Typical incremental runs complete in 30-60 seconds
-- **Cost Savings**: Shorter execution time = lower Lambda costs
-
-## Event Evolution Support
-
-The system handles evolving event data intelligently:
-
-- **Multiple Events**: Preserves all events for the same visit with different timestamps
-- **Data Evolution**: Events may become more complete over time (e.g., module/packet fields populated later)
-- **Audit Trail**: All event versions preserved for compliance and analysis
-- **Latest Data**: Analysts can query for most recent event per visit to get complete data
-
-## Analytical Queries
-
-The checkpoint parquet file supports various analytical patterns:
-
-### Latest Event Per Visit
-
-```sql
-SELECT *
-FROM (
-  SELECT *,
-         ROW_NUMBER() OVER (
-           PARTITION BY ptid, visit_date, visit_number 
-           ORDER BY timestamp DESC
-         ) as rn
-  FROM checkpoint_events
-) ranked
-WHERE rn = 1
-```
-
-### Monthly Error Counts
-
-```sql
-SELECT center_label, COUNT(*) as error_count
-FROM checkpoint_events
-WHERE action = 'not-pass-qc' 
-  AND visit_date >= '2024-01-01' 
-  AND visit_date < '2024-02-01'
-GROUP BY center_label
-```
-
-### QC Timing Analysis
-
-```sql
-SELECT 
-  center_label,
-  AVG(DATEDIFF(timestamp, visit_date)) as avg_qc_days
-FROM checkpoint_events
-WHERE action IN ('pass-qc', 'not-pass-qc')
-GROUP BY center_label
+./bin/exec-in-devcontainer.sh bash -c "cd lambda/{lambda_name} && terraform apply -target=aws_lambda_function.{lambda_name}"
 ```
 
 ## Testing
 
-The project includes comprehensive testing:
+The monorepo includes comprehensive testing for all lambdas and common code:
 
-### Unit Tests
+### Testing Strategy
 
-- Component-specific tests for each module
-- Error handling and edge cases
-- S3 integration tests
-
-### Property-Based Tests
-
-- Uses Hypothesis library for property verification
-- Tests universal properties across many inputs
-- Minimum 100 iterations per property test
-
-### Integration Tests
-
-- End-to-end Lambda execution
-- Real S3 integration (using LocalStack or test buckets)
-- CloudWatch logs and metrics verification
+- **Unit Tests**: Component-specific tests for each module
+- **Property-Based Tests**: Universal properties tested across many inputs using Hypothesis
+- **Integration Tests**: End-to-end lambda execution and AWS service integration
 
 ### Running Tests
 
 ```bash
-# Run all tests
-./bin/exec-in-devcontainer.sh pants test lambda/event_log_checkpoint/test/python::
+# Test all lambdas and common code
+./bin/exec-in-devcontainer.sh pants test ::
 
-# Run specific test file
-./bin/exec-in-devcontainer.sh pants test lambda/event_log_checkpoint/test/python:test_validator
+# Test specific lambda
+./bin/exec-in-devcontainer.sh pants test lambda/{lambda_name}/test/python::
 
-# Run with coverage
-./bin/exec-in-devcontainer.sh pants test --coverage-py-report=html lambda/event_log_checkpoint/test/python::
+# Test common code modules
+./bin/exec-in-devcontainer.sh pants test common/test/python::
+
+# Test with coverage
+./bin/exec-in-devcontainer.sh pants test --coverage-py-report=html ::
+
+# Test only changed code
+./bin/exec-in-devcontainer.sh pants test --changed-since=HEAD~1 ::
 ```
 
-## Monitoring
+### Property-Based Testing
+
+All lambdas include property-based tests that verify universal behaviors:
+
+- Minimum 100 iterations per property test
+- Tests tagged with feature and property references
+- Validates correctness properties across random inputs
+
+## Monitoring and Observability
 
 ### CloudWatch Metrics
 
-- `NewEventsProcessed`: Count of newly processed events
-- `TotalEvents`: Total events in checkpoint
+Standard metrics across all lambdas:
+
+- `EventsProcessed`: Count of processed events
 - `EventsFailed`: Count of failed events
 - `ExecutionTime`: Total execution time
-- `CheckpointFileSize`: Size of checkpoint file
+- `OutputFileSize`: Size of generated files
 
 ### X-Ray Tracing
 
 - S3 operations tracing
-- Validation performance
-- Parquet write operations
+- Data processing performance
+- Cross-service call tracing
 
-### Recommended Alarms
+### Logging
 
-- Lambda errors > 0
-- Lambda duration > 10 minutes
-- EventsFailed > 10% of EventsProcessed
+Structured logging using AWS Lambda Powertools:
 
-## Performance
+- Consistent log format across all lambdas
+- Request correlation IDs
+- Performance metrics
+- Error details with context
+
+## Performance Optimization
+
+### Common Patterns
+
+All lambdas follow performance optimization patterns:
+
+- **Incremental Processing**: Only process new data since last run
+- **Efficient Data Structures**: Use Polars for fast DataFrame operations
+- **Connection Pooling**: Reuse AWS service connections
+- **Compression**: Use Snappy compression for optimal size/speed balance
 
 ### Expected Performance
 
-- **First run**: 5-10 minutes for 10,000+ historical events
-- **Incremental runs**: 30-60 seconds for 100-1000 new events
-- **Memory**: 3GB to handle large datasets
-- **Timeout**: 15 minutes maximum
-
-### Optimization Features
-
-- Incremental processing reduces processing time by 90%+
-- Efficient parquet merge operations
-- Snappy compression for optimal size/speed balance
-- Connection pooling for S3 operations
+- **First run**: 5-15 minutes for large historical datasets
+- **Incremental runs**: 30-120 seconds for typical new data volumes
+- **Memory**: 3GB to handle large datasets efficiently
+- **Timeout**: 15 minutes maximum per lambda
 
 ## Error Handling
 
-The Lambda handles errors gracefully:
+Standardized error handling across all lambdas:
 
-- **Malformed JSON**: Logs error and continues processing
-- **Schema validation failures**: Logs specific errors and continues
-- **S3 permission errors**: Logs error and fails execution
-- **Partial failures**: Includes valid events in output, logs failed events
-- **Unexpected exceptions**: Logs full error details and fails execution
+- **Input Validation**: Return 400 with descriptive error messages
+- **Processing Errors**: Log detailed information, return 500 with generic message
+- **Partial Failures**: Continue processing valid data, log failed records
+- **Infrastructure Errors**: Retry with exponential backoff
 
 ## Contributing
 
+### Development Guidelines
+
 1. Follow the established dev container workflow
-2. Run quality checks before committing: `./bin/exec-in-devcontainer.sh pants fix lint check test ::`
-3. Add tests for new functionality
-4. Update documentation for significant changes
-5. Use property-based tests for universal behaviors
+2. Use the lambda template for new reporting lambdas
+3. Add common functionality to shared modules when appropriate
+4. Run quality checks before committing: `./bin/exec-in-devcontainer.sh pants fix lint check test ::`
+5. Add comprehensive tests for new functionality
+6. Update documentation for significant changes
+7. Use property-based tests for universal behaviors
+
+### Code Quality Standards
+
+- **Linting**: Ruff with 88-character line length
+- **Type Checking**: mypy with strict configuration
+- **Testing**: Minimum 80% code coverage
+- **Documentation**: Clear docstrings and README files
+
+### Adding New Lambdas
+
+1. Copy the lambda template: `cp -r templates/lambda-template lambda/{new_name}`
+2. Customize the template for your specific data source and processing needs
+3. Update BUILD files and dependencies
+4. Add comprehensive tests
+5. Update this README with lambda description
+6. Create lambda-specific README with detailed documentation
 
 ## License
 
