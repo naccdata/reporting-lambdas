@@ -13,8 +13,8 @@ from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from pydantic import ValidationError
 
-from .reporting_processor import process_data
 from .models import InputEvent, ProcessingResult
+from .reporting_processor import process_data
 
 # Initialize AWS Lambda Powertools
 logger = Logger()

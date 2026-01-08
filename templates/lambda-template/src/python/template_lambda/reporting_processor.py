@@ -1,7 +1,8 @@
 """Reporting processor module for template lambda.
 
-This module contains the core reporting and data processing logic separated from the
-Lambda handler for better testability and maintainability.
+This module contains the core reporting and data processing logic
+separated from the Lambda handler for better testability and
+maintainability.
 """
 
 import os

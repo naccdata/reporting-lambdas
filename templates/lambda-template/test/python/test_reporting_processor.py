@@ -1,7 +1,7 @@
 """Unit tests for template lambda reporting processor.
 
-These tests demonstrate testing patterns for reporting processor including
-data processing, validation, and error handling.
+These tests demonstrate testing patterns for reporting processor
+including data processing, validation, and error handling.
 """
 
 from datetime import datetime
@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from template_lambda.models import InputEvent, SampleDataRecord
 from template_lambda.reporting_processor import (
     generate_sample_data,
     process_data,
@@ -18,7 +19,6 @@ from template_lambda.reporting_processor import (
     save_to_parquet,
     validate_record,
 )
-from template_lambda.models import InputEvent, SampleDataRecord
 
 
 class TestDataProcessing:
@@ -96,7 +96,9 @@ class TestDataProcessing:
         )
 
         # Mock generate_sample_data to raise an exception
-        with patch("template_lambda.reporting_processor.generate_sample_data") as mock_gen:
+        with patch(
+            "template_lambda.reporting_processor.generate_sample_data"
+        ) as mock_gen:
             mock_gen.side_effect = Exception("Data generation failed")
 
             # Act
