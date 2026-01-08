@@ -196,9 +196,9 @@ resource "aws_cloudwatch_dashboard" "lambda_dashboard" {
         height = 6
 
         properties = {
-          query   = "SOURCE '/aws/lambda/${var.lambda_name}' | fields @timestamp, @message | sort @timestamp desc | limit 100"
-          region  = data.aws_region.current.name
-          title   = "${var.lambda_name} - Recent Logs"
+          query  = "SOURCE '/aws/lambda/${var.lambda_name}' | fields @timestamp, @message | sort @timestamp desc | limit 100"
+          region = data.aws_region.current.name
+          title  = "${var.lambda_name} - Recent Logs"
         }
       }
     ]

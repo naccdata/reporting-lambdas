@@ -81,22 +81,22 @@ output "dashboard_arn" {
 
 output "dashboard_url" {
   description = "URL of the CloudWatch dashboard (null if not created)"
-  value = var.create_dashboard ? "https://console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.name}#dashboards:name=${aws_cloudwatch_dashboard.lambda_dashboard[0].dashboard_name}" : null
+  value       = var.create_dashboard ? "https://console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.name}#dashboards:name=${aws_cloudwatch_dashboard.lambda_dashboard[0].dashboard_name}" : null
 }
 
 # Summary Outputs
 output "monitoring_summary" {
   description = "Summary of monitoring configuration"
   value = {
-    log_group_name        = aws_cloudwatch_log_group.lambda_logs.name
-    log_retention_days    = aws_cloudwatch_log_group.lambda_logs.retention_in_days
-    error_alarm_enabled   = var.enable_error_alarm
+    log_group_name         = aws_cloudwatch_log_group.lambda_logs.name
+    log_retention_days     = aws_cloudwatch_log_group.lambda_logs.retention_in_days
+    error_alarm_enabled    = var.enable_error_alarm
     duration_alarm_enabled = var.enable_duration_alarm
     throttle_alarm_enabled = var.enable_throttle_alarm
-    memory_alarm_enabled  = var.enable_memory_alarm
-    custom_alarms_count   = length(var.custom_alarms)
-    dashboard_created     = var.create_dashboard
-    alarm_actions_count   = length(var.alarm_actions)
+    memory_alarm_enabled   = var.enable_memory_alarm
+    custom_alarms_count    = length(var.custom_alarms)
+    dashboard_created      = var.create_dashboard
+    alarm_actions_count    = length(var.alarm_actions)
   }
 }
 

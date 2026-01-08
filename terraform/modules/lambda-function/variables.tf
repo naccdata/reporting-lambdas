@@ -142,7 +142,7 @@ variable "dead_letter_queue_arn" {
   default     = ""
 
   validation {
-    condition = var.dead_letter_queue_arn == "" || can(regex("^arn:aws:(sqs|sns):[a-z0-9-]+:[0-9]+:.+$", var.dead_letter_queue_arn))
+    condition     = var.dead_letter_queue_arn == "" || can(regex("^arn:aws:(sqs|sns):[a-z0-9-]+:[0-9]+:.+$", var.dead_letter_queue_arn))
     error_message = "Dead letter queue ARN must be empty or a valid SQS/SNS ARN."
   }
 }
@@ -192,7 +192,7 @@ variable "schedule_expression" {
   default     = ""
 
   validation {
-    condition = var.schedule_expression == "" || can(regex("^(rate\\(.+\\)|cron\\(.+\\))$", var.schedule_expression))
+    condition     = var.schedule_expression == "" || can(regex("^(rate\\(.+\\)|cron\\(.+\\))$", var.schedule_expression))
     error_message = "Schedule expression must be empty or a valid rate() or cron() expression."
   }
 }
@@ -243,13 +243,6 @@ variable "api_gateway_triggers" {
     source_arn = string
   }))
   default = {}
-}
-
-# Dependencies
-variable "depends_on_resources" {
-  description = "List of resources this Lambda depends on"
-  type        = list(any)
-  default     = []
 }
 
 # Tags

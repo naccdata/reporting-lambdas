@@ -71,14 +71,14 @@ resource "aws_iam_role_policy_attachment" "lambda_xray" {
 
 # Lambda function
 resource "aws_lambda_function" "template_lambda" {
-  filename         = var.lambda_package_path
-  function_name    = var.lambda_name
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "lambda_function.lambda_handler"
-  runtime         = "python3.12"
-  timeout         = var.timeout
-  memory_size     = var.memory_size
-  architectures   = ["x86_64"]
+  filename      = var.lambda_package_path
+  function_name = var.lambda_name
+  role          = aws_iam_role.lambda_role.arn
+  handler       = "lambda_function.lambda_handler"
+  runtime       = "python3.12"
+  timeout       = var.timeout
+  memory_size   = var.memory_size
+  architectures = ["x86_64"]
 
   source_code_hash = filebase64sha256(var.lambda_package_path)
 
@@ -86,10 +86,10 @@ resource "aws_lambda_function" "template_lambda" {
 
   environment {
     variables = {
-      INPUT_BUCKET        = var.input_bucket_name
-      OUTPUT_BUCKET       = var.output_bucket_name
-      OUTPUT_PREFIX       = var.output_prefix
-      LOG_LEVEL          = var.log_level
+      INPUT_BUCKET            = var.input_bucket_name
+      OUTPUT_BUCKET           = var.output_bucket_name
+      OUTPUT_PREFIX           = var.output_prefix
+      LOG_LEVEL               = var.log_level
       POWERTOOLS_SERVICE_NAME = var.lambda_name
     }
   }

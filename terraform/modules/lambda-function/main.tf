@@ -14,11 +14,11 @@ terraform {
 # Lambda function
 resource "aws_lambda_function" "function" {
   function_name = var.function_name
-  role         = var.execution_role_arn
-  handler      = var.handler
-  runtime      = var.runtime
-  timeout      = var.timeout
-  memory_size  = var.memory_size
+  role          = var.execution_role_arn
+  handler       = var.handler
+  runtime       = var.runtime
+  timeout       = var.timeout
+  memory_size   = var.memory_size
   architectures = var.architectures
 
   filename         = var.package_path
@@ -44,15 +44,13 @@ resource "aws_lambda_function" "function" {
   }
 
   # Reserved concurrency
-  reserved_concurrency = var.reserved_concurrency
+  reserved_concurrent_executions = var.reserved_concurrency
 
   tags = merge(var.tags, {
     Name    = var.function_name
     Module  = "lambda-function"
     Purpose = "Reporting Lambda function"
   })
-
-  depends_on = var.depends_on_resources
 }
 
 # Lambda function alias (for versioning)
@@ -143,12 +141,12 @@ resource "aws_lambda_permission" "allow_sqs" {
 
 # SQS event source mappings (if configured)
 resource "aws_lambda_event_source_mapping" "sqs_triggers" {
-  for_each                       = var.sqs_triggers
-  event_source_arn              = each.value.queue_arn
-  function_name                 = aws_lambda_function.function.arn
-  batch_size                    = each.value.batch_size
+  for_each                           = var.sqs_triggers
+  event_source_arn                   = each.value.queue_arn
+  function_name                      = aws_lambda_function.function.arn
+  batch_size                         = each.value.batch_size
   maximum_batching_window_in_seconds = each.value.maximum_batching_window_in_seconds
-  
+
   depends_on = [aws_lambda_permission.allow_sqs]
 }
 

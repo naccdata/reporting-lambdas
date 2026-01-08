@@ -215,8 +215,8 @@ variable "memory_alarm_period" {
 variable "custom_alarms" {
   description = "Map of custom alarm configurations"
   type = map(object({
-    comparison_operator    = string
-    evaluation_periods     = number
+    comparison_operator   = string
+    evaluation_periods    = number
     metric_name           = string
     namespace             = string
     period                = number

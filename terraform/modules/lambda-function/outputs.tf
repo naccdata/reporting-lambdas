@@ -69,7 +69,7 @@ output "architectures" {
 
 output "reserved_concurrency" {
   description = "Reserved concurrency for the Lambda function"
-  value       = aws_lambda_function.function.reserved_concurrency
+  value       = aws_lambda_function.function.reserved_concurrent_executions
 }
 
 # Environment and Layers
@@ -156,19 +156,19 @@ output "vpc_config" {
 output "lambda_configuration" {
   description = "Complete Lambda function configuration summary"
   value = {
-    function_name       = aws_lambda_function.function.function_name
-    function_arn        = aws_lambda_function.function.arn
-    runtime            = aws_lambda_function.function.runtime
-    handler            = aws_lambda_function.function.handler
-    timeout            = aws_lambda_function.function.timeout
-    memory_size        = aws_lambda_function.function.memory_size
-    architectures      = aws_lambda_function.function.architectures
-    reserved_concurrency = aws_lambda_function.function.reserved_concurrency
-    layers             = aws_lambda_function.function.layers
-    xray_enabled       = var.enable_xray
-    alias_created      = var.create_alias
-    schedule_configured = var.schedule_expression != ""
-    vpc_enabled        = length(var.vpc_subnet_ids) > 0
+    function_name        = aws_lambda_function.function.function_name
+    function_arn         = aws_lambda_function.function.arn
+    runtime              = aws_lambda_function.function.runtime
+    handler              = aws_lambda_function.function.handler
+    timeout              = aws_lambda_function.function.timeout
+    memory_size          = aws_lambda_function.function.memory_size
+    architectures        = aws_lambda_function.function.architectures
+    reserved_concurrency = aws_lambda_function.function.reserved_concurrent_executions
+    layers               = aws_lambda_function.function.layers
+    xray_enabled         = var.enable_xray
+    alias_created        = var.create_alias
+    schedule_configured  = var.schedule_expression != ""
+    vpc_enabled          = length(var.vpc_subnet_ids) > 0
     trigger_count = {
       s3          = length(var.s3_triggers)
       sqs         = length(var.sqs_triggers)
@@ -181,11 +181,11 @@ output "lambda_configuration" {
 output "deployment_info" {
   description = "Information about the Lambda deployment"
   value = {
-    package_path        = var.package_path
-    source_code_hash    = aws_lambda_function.function.source_code_hash
-    source_code_size    = aws_lambda_function.function.source_code_size
-    last_modified       = aws_lambda_function.function.last_modified
-    version             = aws_lambda_function.function.version
-    qualified_arn       = aws_lambda_function.function.qualified_arn
+    package_path     = var.package_path
+    source_code_hash = aws_lambda_function.function.source_code_hash
+    source_code_size = aws_lambda_function.function.source_code_size
+    last_modified    = aws_lambda_function.function.last_modified
+    version          = aws_lambda_function.function.version
+    qualified_arn    = aws_lambda_function.function.qualified_arn
   }
 }
