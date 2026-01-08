@@ -29,9 +29,9 @@ resource "aws_lambda_layer_version" "powertools" {
     var.reuse_existing_layers && length(data.aws_lambda_layer_version.powertools) > 0 && !var.force_layer_update ? 0 : 1
   )
 
-  filename         = "dist/checkpoint_lambda.powertools.zip"
+  filename         = "../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/powertools.zip"
   layer_name       = "event-log-checkpoint-powertools"
-  source_code_hash = filebase64sha256("dist/checkpoint_lambda.powertools.zip")
+  source_code_hash = filebase64sha256("../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/powertools.zip")
 
   compatible_runtimes = ["python3.12"]
   description         = "AWS Lambda Powertools layer for event log checkpoint function"
@@ -46,9 +46,9 @@ resource "aws_lambda_layer_version" "data_processing" {
     var.reuse_existing_layers && length(data.aws_lambda_layer_version.data_processing) > 0 && !var.force_layer_update ? 0 : 1
   )
 
-  filename         = "dist/checkpoint_lambda.data_processing.zip"
+  filename         = "../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/data_processing.zip"
   layer_name       = "event-log-checkpoint-data-processing"
-  source_code_hash = filebase64sha256("dist/checkpoint_lambda.data_processing.zip")
+  source_code_hash = filebase64sha256("../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/data_processing.zip")
 
   compatible_runtimes = ["python3.12"]
   description         = "Pydantic and Polars layer for data processing"
@@ -170,8 +170,8 @@ resource "aws_lambda_function" "event_log_checkpoint" {
   timeout       = 900  # 15 minutes
   memory_size   = 3008 # 3GB
 
-  filename         = "dist/checkpoint_lambda.lambda.zip"
-  source_code_hash = filebase64sha256("dist/checkpoint_lambda.lambda.zip")
+  filename         = "../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/lambda.zip"
+  source_code_hash = filebase64sha256("../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/lambda.zip")
 
   layers = local.layer_arns
 
@@ -180,7 +180,7 @@ resource "aws_lambda_function" "event_log_checkpoint" {
       SOURCE_BUCKET           = var.source_bucket
       CHECKPOINT_BUCKET       = var.checkpoint_bucket
       CHECKPOINT_KEY          = var.checkpoint_key
-      LOG_LEVEL              = var.log_level
+      LOG_LEVEL               = var.log_level
       POWERTOOLS_SERVICE_NAME = "event-log-checkpoint"
     }
   }

@@ -69,7 +69,7 @@ variable "external_layer_arns" {
   default     = []
 
   validation {
-    condition = var.use_external_layer_arns ? length(var.external_layer_arns) >= 2 : true
+    condition     = var.use_external_layer_arns ? length(var.external_layer_arns) >= 2 : true
     error_message = "When use_external_layer_arns is true, external_layer_arns must contain at least 2 ARNs (powertools and data_processing layers)."
   }
 
@@ -94,7 +94,7 @@ variable "alarm_sns_topic_arn" {
   default     = ""
 
   validation {
-    condition = var.alarm_sns_topic_arn == "" || can(regex("^arn:aws:sns:[a-z0-9-]+:[0-9]+:[a-zA-Z0-9-_]+$", var.alarm_sns_topic_arn))
+    condition     = var.alarm_sns_topic_arn == "" || can(regex("^arn:aws:sns:[a-z0-9-]+:[0-9]+:[a-zA-Z0-9-_]+$", var.alarm_sns_topic_arn))
     error_message = "SNS topic ARN must be a valid ARN or empty string."
   }
 }
