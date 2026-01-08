@@ -1,6 +1,6 @@
-# Event Log Checkpoint Lambda
+# Reporting Lambdas
 
-An AWS Lambda function that processes visit event logs from S3 storage and creates queryable checkpoint parquet files for analytical reporting. The Lambda supports incremental processing, validating events against schema specifications, and aggregating data for monthly reporting queries.
+A collection of AWS Lambda functions for analytical reporting, including event log processing that creates queryable checkpoint parquet files. The primary Lambda supports incremental processing, validating events against schema specifications, and aggregating data for monthly reporting queries.
 
 ## Overview
 
