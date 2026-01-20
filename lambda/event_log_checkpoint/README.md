@@ -85,7 +85,7 @@ The Lambda function uses these environment variables:
 
 This repo has a devcontainer definition that can be used in development.
 If you are working in an IDE that supports it, you can just use the devcontainer directly.
-Otherwise, the `bin` directory includes scripts that use the `devcontainer` npm package to manage the devcontainer on the host machine.
+Otherwise, the `bin` directory includes scripts that use the devcontainer CLI to manage the devcontainer on the host machine.
 
 ### Build Lambda Packages
 
