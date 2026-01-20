@@ -24,6 +24,58 @@ This monorepo contains multiple reporting lambdas that extract data from differe
 - **Observability**: Comprehensive logging, tracing, and metrics using AWS Lambda Powertools
 - **Template-Based Development**: Standardized lambda template for rapid development
 
+## Getting Started
+
+### Prerequisites
+
+This project uses dev containers for consistent development environments. You'll need to install the devcontainer CLI on your host machine.
+
+#### Install Devcontainer CLI
+
+The devcontainer CLI allows you to manage dev containers from the command line.
+
+**macOS (using Homebrew):**
+
+```bash
+brew install devcontainer
+```
+
+**macOS/Linux (using npm):**
+
+```bash
+npm install -g @devcontainers/cli
+```
+
+**Verify Installation:**
+
+```bash
+devcontainer --version
+```
+
+#### Docker Requirement
+
+The devcontainer CLI requires Docker to be installed and running:
+
+- **macOS**: Install [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
+- **Linux**: Install [Docker Engine](https://docs.docker.com/engine/install/)
+
+Ensure Docker is running before using the dev container scripts.
+
+### Quick Start
+
+Once the devcontainer CLI is installed:
+
+```bash
+# Start the dev container (idempotent - safe to run multiple times)
+./bin/start-devcontainer.sh
+
+# Open an interactive shell in the container
+./bin/terminal.sh
+
+# Or execute commands directly
+./bin/exec-in-devcontainer.sh pants test ::
+```
+
 ## Repository Structure
 
 The monorepo is organized to support multiple reporting lambdas with shared code:
