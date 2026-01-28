@@ -8,7 +8,7 @@ This monorepo uses a **shared backend infrastructure** for all Lambda projects. 
 
 ### Created Once for Entire Monorepo
 
-Run `backend-setup.sh` **once** to create:
+Run `../../scripts/backend-setup.sh` **once** to create:
 
 1. **S3 Bucket**: `nacc-terraform-state`
    - Stores all Terraform state files
