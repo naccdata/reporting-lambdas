@@ -248,5 +248,7 @@ Separate layers enable fast function-only deployments.
 ## Related Documentation
 
 - [TERRAFORM.md](./TERRAFORM.md) - Terraform deployment guide
+- [ENVIRONMENTS.md](./ENVIRONMENTS.md) - Environment management guide (dev/staging/prod)
+- [PRODUCTION-READINESS.md](./PRODUCTION-READINESS.md) - Production readiness checklist
 - [context/docs/lambda-patterns.md](../../context/docs/lambda-patterns.md) - Lambda design patterns
 - [context/docs/event-log-format.md](../../context/docs/event-log-format.md) - Event log format specification
