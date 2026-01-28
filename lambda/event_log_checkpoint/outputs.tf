@@ -26,6 +26,16 @@ output "lambda_function_version" {
   value       = aws_lambda_function.event_log_checkpoint.version
 }
 
+output "lambda_alias_arn" {
+  description = "ARN of the Lambda alias (stable endpoint)"
+  value       = aws_lambda_alias.current.arn
+}
+
+output "lambda_alias_name" {
+  description = "Name of the Lambda alias"
+  value       = aws_lambda_alias.current.name
+}
+
 # Layer outputs (only when not using external layers)
 output "powertools_layer_arn" {
   description = "ARN of the Powertools layer (null when using external layers)"

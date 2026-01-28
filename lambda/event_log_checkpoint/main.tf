@@ -10,17 +10,28 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  # Backend configuration for remote state management
+  backend "s3" {
+    bucket  = "nacc-terraform-state"
+    key     = "lambda/event-log-checkpoint/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
+    
+    # Note: DynamoDB locking intentionally omitted
+    # Team coordination via communication (Slack, etc.)
+  }
 }
 
 # Data sources to check for existing layers
 data "aws_lambda_layer_version" "powertools" {
   count      = var.reuse_existing_layers && !var.use_external_layer_arns ? 1 : 0
-  layer_name = "event-log-checkpoint-powertools"
+  layer_name = "event-log-checkpoint-powertools-${var.environment}"
 }
 
 data "aws_lambda_layer_version" "data_processing" {
   count      = var.reuse_existing_layers && !var.use_external_layer_arns ? 1 : 0
-  layer_name = "event-log-checkpoint-data-processing"
+  layer_name = "event-log-checkpoint-data-processing-${var.environment}"
 }
 
 # Lambda layers - only create if not reusing existing or if content changed
@@ -30,11 +41,11 @@ resource "aws_lambda_layer_version" "powertools" {
   )
 
   filename         = "../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/powertools.zip"
-  layer_name       = "event-log-checkpoint-powertools"
+  layer_name       = "event-log-checkpoint-powertools-${var.environment}"
   source_code_hash = filebase64sha256("../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/powertools.zip")
 
   compatible_runtimes = ["python3.12"]
-  description         = "AWS Lambda Powertools layer for event log checkpoint function"
+  description         = "AWS Lambda Powertools layer for event log checkpoint function (${var.environment})"
 
   lifecycle {
     create_before_destroy = true
@@ -47,11 +58,11 @@ resource "aws_lambda_layer_version" "data_processing" {
   )
 
   filename         = "../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/data_processing.zip"
-  layer_name       = "event-log-checkpoint-data-processing"
+  layer_name       = "event-log-checkpoint-data-processing-${var.environment}"
   source_code_hash = filebase64sha256("../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/data_processing.zip")
 
   compatible_runtimes = ["python3.12"]
-  description         = "Pydantic and Polars layer for data processing"
+  description         = "Pydantic and Polars layer for data processing (${var.environment})"
 
   lifecycle {
     create_before_destroy = true
@@ -81,7 +92,7 @@ locals {
 
 # IAM role for Lambda function
 resource "aws_iam_role" "lambda_role" {
-  name = "event-log-checkpoint-lambda-role"
+  name = "event-log-checkpoint-lambda-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -105,7 +116,7 @@ resource "aws_iam_role" "lambda_role" {
 
 # S3 permissions for Lambda function
 resource "aws_iam_role_policy" "lambda_s3_policy" {
-  name = "event-log-checkpoint-s3-policy"
+  name = "event-log-checkpoint-s3-policy-${var.environment}"
   role = aws_iam_role.lambda_role.id
 
   policy = jsonencode({
@@ -151,8 +162,8 @@ resource "aws_iam_role_policy_attachment" "lambda_xray" {
 
 # CloudWatch log group
 resource "aws_cloudwatch_log_group" "lambda_logs" {
-  name              = "/aws/lambda/event-log-checkpoint"
-  retention_in_days = 30
+  name              = "/aws/lambda/event-log-checkpoint-${var.environment}"
+  retention_in_days = var.log_retention_days
 
   tags = {
     Name        = "event-log-checkpoint-logs"
@@ -163,12 +174,12 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
 
 # Lambda function
 resource "aws_lambda_function" "event_log_checkpoint" {
-  function_name = "event-log-checkpoint"
+  function_name = "event-log-checkpoint-${var.environment}"
   role          = aws_iam_role.lambda_role.arn
   handler       = "checkpoint_lambda.lambda_function.lambda_handler"
   runtime       = "python3.12"
-  timeout       = 900  # 15 minutes
-  memory_size   = 3008 # 3GB
+  timeout       = var.lambda_timeout
+  memory_size   = var.lambda_memory_size
 
   filename         = "../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/lambda.zip"
   source_code_hash = filebase64sha256("../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/lambda.zip")
@@ -181,13 +192,17 @@ resource "aws_lambda_function" "event_log_checkpoint" {
       CHECKPOINT_BUCKET       = var.checkpoint_bucket
       CHECKPOINT_KEY          = var.checkpoint_key
       LOG_LEVEL               = var.log_level
-      POWERTOOLS_SERVICE_NAME = "event-log-checkpoint"
+      ENVIRONMENT             = var.environment
+      POWERTOOLS_SERVICE_NAME = "event-log-checkpoint-${var.environment}"
     }
   }
 
   tracing_config {
     mode = "Active" # Enable X-Ray tracing
   }
+
+  # Enable versioning - creates new version on each deployment
+  publish = true
 
   depends_on = [
     aws_iam_role_policy_attachment.lambda_basic_execution,
@@ -202,9 +217,21 @@ resource "aws_lambda_function" "event_log_checkpoint" {
   }
 }
 
+# Lambda alias for stable endpoint
+resource "aws_lambda_alias" "current" {
+  name             = var.environment
+  description      = "Alias for ${var.environment} environment - points to current version"
+  function_name    = aws_lambda_function.event_log_checkpoint.function_name
+  function_version = aws_lambda_function.event_log_checkpoint.version
+
+  lifecycle {
+    ignore_changes = [function_version]
+  }
+}
+
 # CloudWatch alarms for monitoring
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
-  alarm_name          = "event-log-checkpoint-errors"
+  alarm_name          = "event-log-checkpoint-errors-${var.environment}"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "2"
   metric_name         = "Errors"
@@ -220,14 +247,14 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   }
 
   tags = {
-    Name        = "event-log-checkpoint-errors"
+    Name        = "event-log-checkpoint-errors-${var.environment}"
     Environment = var.environment
     Project     = "event-log-checkpoint"
   }
 }
 
 resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
-  alarm_name          = "event-log-checkpoint-duration"
+  alarm_name          = "event-log-checkpoint-duration-${var.environment}"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "2"
   metric_name         = "Duration"
@@ -243,7 +270,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
   }
 
   tags = {
-    Name        = "event-log-checkpoint-duration"
+    Name        = "event-log-checkpoint-duration-${var.environment}"
     Environment = var.environment
     Project     = "event-log-checkpoint"
   }
