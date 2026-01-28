@@ -4,10 +4,10 @@ This module contains the VisitEvent model that validates and parses
 visit event logs according to the NACC event log specification.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Pattern definitions
 PTID_PATTERN = r"^[!-~]{1,10}$"  # printable non-whitespace characters
@@ -27,7 +27,7 @@ DatatypeNameType = Literal[
     "scan-analysis",
 ]
 
-ModuleName = Literal["UDS", "FTLD", "LBD", "MDS"]
+ModuleName = str  # Type alias for readability - accepts any string module name
 
 
 class VisitEvent(BaseModel):
@@ -66,6 +66,27 @@ class VisitEvent(BaseModel):
     )
     packet: Optional[str] = Field(default=None, description="Packet type - optional")
     timestamp: datetime = Field(description="When action occurred (ISO 8601 datetime)")
+
+    @field_validator("timestamp", mode="after")
+    @classmethod
+    def ensure_utc_timezone(cls, v: datetime) -> datetime:
+        """Ensure timestamp always has UTC timezone.
+        
+        If timestamp is naive (no timezone), assume it's UTC.
+        If timestamp has a timezone, convert it to UTC.
+        
+        Args:
+            v: Datetime value after Pydantic parsing
+            
+        Returns:
+            Datetime with UTC timezone
+        """
+        if v.tzinfo is None:
+            # Naive datetime - assume UTC
+            return v.replace(tzinfo=timezone.utc)
+        else:
+            # Timezone-aware - convert to UTC
+            return v.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def validate_module(self) -> Self:

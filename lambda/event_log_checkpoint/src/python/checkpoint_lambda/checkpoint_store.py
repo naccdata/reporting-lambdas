@@ -70,6 +70,14 @@ class CheckpointStore:
             s3_uri = f"s3://{self.bucket}/{self.key}"
             df = read_parquet(s3_uri)
 
+            # Ensure timestamp column has UTC timezone by casting to the expected schema
+            # This handles both naive and timezone-aware datetimes from parquet
+            if "timestamp" in df.columns:
+                from polars import col, Datetime
+                df = df.with_columns(
+                    col("timestamp").cast(Datetime("us", time_zone="UTC"))
+                )
+
             return Checkpoint(df)
 
         except (FileNotFoundError, OSError):
