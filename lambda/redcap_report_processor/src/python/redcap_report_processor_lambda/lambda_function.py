@@ -13,6 +13,8 @@ from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from pydantic import ValidationError
 
+from utils import handle_missing_parameter_error
+
 from .models import InputEvent, ProcessingResult
 from .reporting_processor import process_data
 
@@ -48,14 +50,39 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, A
     Returns:
         Dict containing status code and response body
     """
+    # Parse event parameters
+    parameter_path = event.get("parameter_path"),
+    table_name = event.get("table_name"),
+    output_prefix = event.get("output_prefix", "nacc-reporting/redcap"),
+    environment = event.get("environment", "dev")
+    log_level = event.get("log_level", "INFO")
+
+    # Log invocation parameters using Lambda Powertools Logger (Requirement 11.1)
     logger.info(
-        "Processing request",
+        "Lambda execution started",
         extra={
-            "request_id": context.aws_request_id,
-            "event_source": event.get("source", "unknown"),
-            "remaining_time_ms": context.get_remaining_time_in_millis(),
+            "invocation_parameters": {
+                "parameter_path": parameter_path,
+                "table_name": table_name,
+                "output_prefix": output_prefix,
+                "environment": environment,
+                "log_level": log_level,
+            },
+            "lambda_request_id": context.aws_request_id,
+            "function_name": context.function_name,
+            "function_version": context.function_version,
         },
     )
+
+    logging.basicConfig(level=log_level)
+
+    # validate required parameters
+    if not parameter_path:
+        return handle_missing_parameter_error("parameter_path")
+    if not table_name:
+        return handle_missing_parameter_error("table_name")
+    if not output_prefix:
+        return handle_missing_parameter_error("output_prefix")
 
     try:
         # Parse and validate input event
