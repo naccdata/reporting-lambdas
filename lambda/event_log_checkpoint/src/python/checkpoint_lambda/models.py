@@ -71,13 +71,13 @@ class VisitEvent(BaseModel):
     @classmethod
     def ensure_utc_timezone(cls, v: datetime) -> datetime:
         """Ensure timestamp always has UTC timezone.
-        
+
         If timestamp is naive (no timezone), assume it's UTC.
         If timestamp has a timezone, convert it to UTC.
-        
+
         Args:
             v: Datetime value after Pydantic parsing
-            
+
         Returns:
             Datetime with UTC timezone
         """
