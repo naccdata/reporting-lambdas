@@ -152,3 +152,20 @@ output "deployment_info" {
     log_level         = var.log_level
   }
 }
+
+# Lifecycle policy outputs
+output "lifecycle_policy_enabled" {
+  description = "Whether S3 lifecycle policy is enabled for event log management"
+  value       = var.manage_source_bucket_lifecycle
+}
+
+output "lifecycle_policy_configuration" {
+  description = "S3 lifecycle policy configuration for event log management"
+  value = var.manage_source_bucket_lifecycle ? {
+    archival_enabled             = var.enable_event_log_archival
+    glacier_transition_days      = var.enable_event_log_archival ? var.days_until_glacier_transition : null
+    deep_archive_transition_days = var.enable_event_log_archival && var.days_until_deep_archive_transition > 0 ? var.days_until_deep_archive_transition : null
+    expiration_days              = var.days_until_expiration > 0 ? var.days_until_expiration : null
+    applies_to_prefix            = var.event_log_prefix != "" ? var.event_log_prefix : "all files"
+  } : null
+}

@@ -17,7 +17,7 @@ terraform {
     key     = "lambda/event-log-checkpoint/terraform.tfstate"
     region  = "us-east-1"
     encrypt = true
-    
+
     # Note: DynamoDB locking intentionally omitted
     # Team coordination via communication (Slack, etc.)
   }
@@ -273,5 +273,63 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
     Name        = "event-log-checkpoint-duration-${var.environment}"
     Environment = var.environment
     Project     = "event-log-checkpoint"
+  }
+}
+
+# S3 lifecycle policy for event log archival
+# This manages the lifecycle of event log JSON files in the source bucket
+resource "aws_s3_bucket_lifecycle_configuration" "event_log_archival" {
+  count  = var.manage_source_bucket_lifecycle ? 1 : 0
+  bucket = var.source_bucket
+
+  # Rule for archival or expiration
+  rule {
+    id     = "manage-event-logs-${var.environment}"
+    status = "Enabled"
+
+    # Apply to event log files only (matching the pattern)
+    filter {
+      prefix = var.event_log_prefix != "" ? var.event_log_prefix : ""
+    }
+
+    # Transition to Glacier (only if archival is enabled)
+    dynamic "transition" {
+      for_each = var.enable_event_log_archival ? [1] : []
+      content {
+        days          = var.days_until_glacier_transition
+        storage_class = "GLACIER"
+      }
+    }
+
+    # Optional: Transition to Deep Archive for long-term storage
+    dynamic "transition" {
+      for_each = var.enable_event_log_archival && var.days_until_deep_archive_transition > 0 ? [1] : []
+      content {
+        days          = var.days_until_deep_archive_transition
+        storage_class = "DEEP_ARCHIVE"
+      }
+    }
+
+    # Optional: Expire (delete) files after specified days
+    dynamic "expiration" {
+      for_each = var.days_until_expiration > 0 ? [1] : []
+      content {
+        days = var.days_until_expiration
+      }
+    }
+  }
+
+  # Cleanup incomplete multipart uploads after 7 days
+  rule {
+    id     = "cleanup-incomplete-uploads-${var.environment}"
+    status = "Enabled"
+
+    filter {
+      prefix = var.event_log_prefix != "" ? var.event_log_prefix : ""
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
   }
 }

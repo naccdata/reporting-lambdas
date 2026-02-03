@@ -30,6 +30,14 @@ alarm_sns_topic_arn = ""
 # Optional: filter to specific date range
 # event_log_prefix = "logs/"
 
+# S3 Lifecycle Management
+# Staging: Archive to Glacier, keep indefinitely
+manage_source_bucket_lifecycle     = true
+enable_event_log_archival          = true
+days_until_glacier_transition      = 90 # Archive after 90 days
+days_until_deep_archive_transition = 0  # Skip Deep Archive for staging
+days_until_expiration              = 0  # Keep forever
+
 # Tags
 additional_tags = {
   Environment = "staging"

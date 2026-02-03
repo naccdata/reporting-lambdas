@@ -7,7 +7,7 @@ log_level   = "DEBUG"
 
 # S3 Configuration
 source_bucket     = "submission-events"
-checkpoint_bucket = "submission-events"  # Using same bucket for checkpoints
+checkpoint_bucket = "submission-events" # Using same bucket for checkpoints
 checkpoint_key    = "dev/checkpoints/events.parquet"
 
 # Lambda Configuration
@@ -28,6 +28,14 @@ alarm_sns_topic_arn = ""
 # Event Log Filtering
 # Filter to dev folder
 event_log_prefix = "dev/"
+
+# S3 Lifecycle Management
+# Dev: Delete files after 30 days (no archival needed for dev)
+manage_source_bucket_lifecycle     = true
+enable_event_log_archival          = false # Skip archival, just delete
+days_until_glacier_transition      = 90    # Not used when archival disabled
+days_until_deep_archive_transition = 0     # Not used when archival disabled
+days_until_expiration              = 30    # Delete after 30 days
 
 # Tags
 additional_tags = {

@@ -30,6 +30,14 @@ alarm_sns_topic_arn = ""
 # Optional: filter to specific date range
 # event_log_prefix = "logs/"
 
+# S3 Lifecycle Management
+# Production: Full archival strategy with long-term retention
+manage_source_bucket_lifecycle     = true
+enable_event_log_archival          = true
+days_until_glacier_transition      = 90  # Archive to Glacier after 90 days
+days_until_deep_archive_transition = 365 # Move to Deep Archive after 1 year
+days_until_expiration              = 0   # Keep forever (compliance requirement)
+
 # Tags
 additional_tags = {
   Environment = "prod"

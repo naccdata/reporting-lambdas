@@ -142,6 +142,52 @@ variable "event_log_prefix" {
   default     = ""
 }
 
+# S3 lifecycle policy variables
+variable "enable_event_log_archival" {
+  description = "Enable automatic archival of old event log files to Glacier"
+  type        = bool
+  default     = true
+}
+
+variable "days_until_glacier_transition" {
+  description = "Number of days after creation before event logs are transitioned to Glacier"
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.days_until_glacier_transition >= 30
+    error_message = "Days until Glacier transition must be at least 30 days (S3 requirement)."
+  }
+}
+
+variable "days_until_deep_archive_transition" {
+  description = "Number of days after creation before event logs are transitioned to Glacier Deep Archive (0 to disable)"
+  type        = number
+  default     = 365
+
+  validation {
+    condition     = var.days_until_deep_archive_transition == 0 || var.days_until_deep_archive_transition >= 180
+    error_message = "Days until Deep Archive transition must be 0 (disabled) or at least 180 days (S3 requirement)."
+  }
+}
+
+variable "days_until_expiration" {
+  description = "Number of days after creation before event logs are permanently deleted (0 to disable)"
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.days_until_expiration >= 0
+    error_message = "Days until expiration must be 0 or greater."
+  }
+}
+
+variable "manage_source_bucket_lifecycle" {
+  description = "Whether to manage lifecycle policy for source bucket (set to false if bucket is managed elsewhere)"
+  type        = bool
+  default     = false
+}
+
 # Tags
 variable "additional_tags" {
   description = "Additional tags to apply to all resources"

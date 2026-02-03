@@ -41,6 +41,45 @@ log_retention_days = 30
 # Optional: Event log filtering
 # event_log_prefix = "logs/2024/"
 
+# Optional: S3 lifecycle management for event log archival
+# Set manage_source_bucket_lifecycle = true to enable lifecycle policy management
+# WARNING: Only enable if this Terraform config should manage the source bucket lifecycle
+manage_source_bucket_lifecycle = false # Set to true to enable
+
+# Archival configuration (only applies if manage_source_bucket_lifecycle = true)
+enable_event_log_archival          = true  # Enable automatic archival (false = deletion only)
+days_until_glacier_transition      = 90    # Move to Glacier after 90 days
+days_until_deep_archive_transition = 365   # Move to Deep Archive after 1 year (0 to disable)
+days_until_expiration              = 0     # Permanently delete after X days (0 to disable)
+
+# Environment-specific examples:
+# 
+# Development (delete after 30 days, no archival):
+# manage_source_bucket_lifecycle = true
+# enable_event_log_archival = false
+# days_until_expiration = 30
+#
+# Staging (archive to Glacier, keep forever):
+# manage_source_bucket_lifecycle = true
+# enable_event_log_archival = true
+# days_until_glacier_transition = 90
+# days_until_deep_archive_transition = 0
+# days_until_expiration = 0
+#
+# Production (full archival with long-term retention):
+# manage_source_bucket_lifecycle = true
+# enable_event_log_archival = true
+# days_until_glacier_transition = 90
+# days_until_deep_archive_transition = 365
+# days_until_expiration = 0
+#
+# Alternative: 7-year compliance retention:
+# manage_source_bucket_lifecycle = true
+# enable_event_log_archival = true
+# days_until_glacier_transition = 90
+# days_until_deep_archive_transition = 365
+# days_until_expiration = 2555  # ~7 years
+
 # Optional: Additional tags
 additional_tags = {
   Owner       = "data-engineering"

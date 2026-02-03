@@ -160,19 +160,44 @@ log_level         = "INFO"
 
 ### Optional Variables
 
-| Variable                  | Default                          | Description                           |
-| ------------------------- | -------------------------------- | ------------------------------------- |
-| `checkpoint_key`          | `"checkpoints/events.parquet"`   | S3 key for checkpoint file            |
-| `environment`             | `"dev"`                          | Environment name (dev/staging/prod)   |
-| `log_level`               | `"INFO"`                         | Lambda logging level                  |
-| `lambda_timeout`          | `900`                            | Lambda timeout in seconds (15 min)    |
-| `lambda_memory_size`      | `3008`                           | Lambda memory in MB (3GB)             |
-| `log_retention_days`      | `30`                             | CloudWatch log retention              |
-| `reuse_existing_layers`   | `true`                           | Reuse existing layers if available    |
-| `use_external_layer_arns` | `false`                          | Use external layer ARNs               |
-| `force_layer_update`      | `false`                          | Force layer updates                   |
-| `external_layer_arns`     | `[]`                             | List of external layer ARNs           |
-| `alarm_sns_topic_arn`     | `""`                             | SNS topic for alarms (optional)       |
+| Variable                       | Default                          | Description                           |
+| ------------------------------ | -------------------------------- | ------------------------------------- |
+| `checkpoint_key`               | `"checkpoints/events.parquet"`   | S3 key for checkpoint file            |
+| `environment`                  | `"dev"`                          | Environment name (dev/staging/prod)   |
+| `log_level`                    | `"INFO"`                         | Lambda logging level                  |
+| `lambda_timeout`               | `900`                            | Lambda timeout in seconds (15 min)    |
+| `lambda_memory_size`           | `3008`                           | Lambda memory in MB (3GB)             |
+| `log_retention_days`           | `30`                             | CloudWatch log retention              |
+| `reuse_existing_layers`        | `true`                           | Reuse existing layers if available    |
+| `use_external_layer_arns`      | `false`                          | Use external layer ARNs               |
+| `force_layer_update`           | `false`                          | Force layer updates                   |
+| `external_layer_arns`          | `[]`                             | List of external layer ARNs           |
+| `alarm_sns_topic_arn`          | `""`                             | SNS topic for alarms (optional)       |
+| `manage_source_bucket_lifecycle` | `false`                        | Manage S3 lifecycle policy            |
+| `enable_event_log_archival`    | `true`                           | Enable archival to Glacier            |
+| `days_until_glacier_transition` | `90`                            | Days before Glacier transition        |
+| `days_until_deep_archive_transition` | `365`                      | Days before Deep Archive (0=disable)  |
+| `days_until_expiration`        | `0`                              | Days before deletion (0=never)        |
+
+### S3 Lifecycle Management
+
+The configuration supports automatic archival of event log files to reduce storage costs. See [EVENT-LOG-ARCHIVAL.md](./EVENT-LOG-ARCHIVAL.md) for detailed information.
+
+**Environment-specific configurations**:
+
+- **Dev**: Delete files after 30 days (no archival)
+- **Staging**: Archive to Glacier after 90 days, keep forever
+- **Production**: Archive to Glacier (90 days) → Deep Archive (1 year), keep forever
+
+To enable lifecycle management:
+
+```hcl
+manage_source_bucket_lifecycle     = true
+enable_event_log_archival          = true
+days_until_glacier_transition      = 90
+days_until_deep_archive_transition = 365
+days_until_expiration              = 0
+```
 
 ## Deployment Workflows
 
@@ -495,6 +520,7 @@ aws lambda delete-layer-version --layer-name event-log-checkpoint-powertools --v
 
 ## Related Documentation
 
-- [README.md](./README.md) - Lambda function overview
+- [README.md](../README.md) - Lambda function overview
+- [EVENT-LOG-ARCHIVAL.md](./EVENT-LOG-ARCHIVAL.md) - Event log archival and lifecycle management
 - [terraform/modules/README.md](../../terraform/modules/README.md) - Terraform modules documentation
 - [context/docs/deployment-guide.md](../../context/docs/deployment-guide.md) - General deployment guide
