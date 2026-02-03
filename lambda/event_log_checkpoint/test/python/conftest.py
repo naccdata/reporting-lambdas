@@ -92,3 +92,49 @@ def setup_s3_environment(moto_server):
         os.environ["AWS_DEFAULT_REGION"] = original_region
     else:
         os.environ.pop("AWS_DEFAULT_REGION", None)
+
+
+@pytest.fixture
+def lambda_config_env(setup_s3_environment):
+    """Configure Lambda environment variables for testing.
+
+    This fixture sets up the Lambda configuration environment variables
+    (BUCKET, PREFIX, CHECKPOINT_KEY_TEMPLATE) and restores them after
+    the test. It depends on setup_s3_environment to ensure AWS
+    credentials are configured.
+
+    By default, uses a template that supports study-datatype grouping.
+    Tests can override these by setting environment variables before
+    calling the handler.
+    """
+    # Store original environment variables
+    original_bucket = os.environ.get("BUCKET")
+    original_prefix = os.environ.get("PREFIX")
+    original_template = os.environ.get("CHECKPOINT_KEY_TEMPLATE")
+
+    # Set default Lambda configuration
+    # Note: Tests should override BUCKET as needed
+    os.environ["BUCKET"] = os.environ.get("BUCKET", "test-default-bucket")
+    os.environ["PREFIX"] = os.environ.get("PREFIX", "")
+    os.environ["CHECKPOINT_KEY_TEMPLATE"] = os.environ.get(
+        "CHECKPOINT_KEY_TEMPLATE",
+        "checkpoints/{study}-{datatype}-events.parquet",
+    )
+
+    yield
+
+    # Restore original environment
+    if original_bucket is not None:
+        os.environ["BUCKET"] = original_bucket
+    else:
+        os.environ.pop("BUCKET", None)
+
+    if original_prefix is not None:
+        os.environ["PREFIX"] = original_prefix
+    else:
+        os.environ.pop("PREFIX", None)
+
+    if original_template is not None:
+        os.environ["CHECKPOINT_KEY_TEMPLATE"] = original_template
+    else:
+        os.environ.pop("CHECKPOINT_KEY_TEMPLATE", None)
