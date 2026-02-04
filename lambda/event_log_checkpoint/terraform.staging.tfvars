@@ -6,9 +6,9 @@ environment = "staging"
 log_level   = "INFO"
 
 # S3 Configuration
-source_bucket     = "nacc-event-logs-staging"
-checkpoint_bucket = "nacc-checkpoints-staging"
-checkpoint_key    = "checkpoints/events.parquet"
+source_bucket           = "submission-events"
+checkpoint_bucket       = "submission-events" # Using same bucket for checkpoints
+checkpoint_key_template = "staging/checkpoints/{study}-{datatype}-events.parquet"
 
 # Lambda Configuration
 lambda_timeout     = 900  # 15 minutes

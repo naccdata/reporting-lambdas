@@ -6,9 +6,9 @@ environment = "dev"
 log_level   = "DEBUG"
 
 # S3 Configuration
-source_bucket     = "submission-events"
-checkpoint_bucket = "submission-events" # Using same bucket for checkpoints
-checkpoint_key    = "dev/checkpoints/events.parquet"
+source_bucket           = "submission-events"
+checkpoint_bucket       = "submission-events" # Using same bucket for checkpoints
+checkpoint_key_template = "dev/checkpoints/{study}-{datatype}-events.parquet"
 
 # Lambda Configuration
 lambda_timeout     = 900  # 15 minutes

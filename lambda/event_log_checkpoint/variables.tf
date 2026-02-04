@@ -22,10 +22,15 @@ variable "checkpoint_bucket" {
 }
 
 # Optional variables with defaults
-variable "checkpoint_key" {
-  description = "S3 key for checkpoint parquet file"
+variable "checkpoint_key_template" {
+  description = "Template for checkpoint S3 keys with {study} and {datatype} placeholders"
   type        = string
-  default     = "checkpoints/events.parquet"
+  default     = "checkpoints/{study}-{datatype}-events.parquet"
+
+  validation {
+    condition     = can(regex("\\{study\\}", var.checkpoint_key_template)) && can(regex("\\{datatype\\}", var.checkpoint_key_template))
+    error_message = "Checkpoint key template must contain both {study} and {datatype} placeholders."
+  }
 }
 
 variable "environment" {

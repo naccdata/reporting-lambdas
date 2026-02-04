@@ -190,7 +190,7 @@ resource "aws_lambda_function" "event_log_checkpoint" {
     variables = {
       SOURCE_BUCKET           = var.source_bucket
       CHECKPOINT_BUCKET       = var.checkpoint_bucket
-      CHECKPOINT_KEY          = var.checkpoint_key
+      CHECKPOINT_KEY_TEMPLATE = var.checkpoint_key_template
       LOG_LEVEL               = var.log_level
       ENVIRONMENT             = var.environment
       POWERTOOLS_SERVICE_NAME = "event-log-checkpoint-${var.environment}"
