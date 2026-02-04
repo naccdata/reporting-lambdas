@@ -28,7 +28,8 @@ def setup_lambda_env(bucket, prefix="", checkpoint_template=None):
     os.environ["BUCKET"] = bucket
     os.environ["PREFIX"] = prefix
     if checkpoint_template is None:
-        checkpoint_template = "checkpoints/{study}-{datatype}-adrc-form-events.parquet"
+        # Default test template - matches conftest.py default
+        checkpoint_template = "checkpoints/{study}/{datatype}/events.parquet"
     os.environ["CHECKPOINT_KEY_TEMPLATE"] = checkpoint_template
 
 
@@ -295,7 +296,7 @@ class TestLambdaHandlerFirstRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         test_event = {}
@@ -325,7 +326,7 @@ class TestLambdaHandlerFirstRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         # }
         test_event = {}
         mock_context = Mock(spec=LambdaContext)
@@ -352,7 +353,7 @@ class TestLambdaHandlerFirstRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         test_event = {}
@@ -388,7 +389,7 @@ class TestLambdaHandlerFirstRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         # }
         mock_context = Mock(spec=LambdaContext)
 
@@ -419,7 +420,7 @@ class TestLambdaHandlerFirstRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -452,7 +453,7 @@ class TestLambdaHandlerFirstRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         # }
         mock_context = Mock(spec=LambdaContext)
 
@@ -522,7 +523,7 @@ class TestLambdaHandlerFirstRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -536,7 +537,7 @@ class TestLambdaHandlerFirstRunScenario:
 
         # Verify no checkpoint was created (first run with no valid events)
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/adrc-form-events.parquet"
+            checkpoint_bucket, "checkpoints/adrc/form/events.parquet"
         )
         assert not checkpoint_store.exists()
         assert checkpoint_store.load() is None
@@ -558,7 +559,7 @@ class TestLambdaHandlerFirstRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -592,7 +593,7 @@ class TestLambdaHandlerFirstRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -673,7 +674,7 @@ class TestLambdaHandlerIncrementalRunScenario:
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/adrc-form-events.parquet"
+            checkpoint_bucket, "checkpoints/adrc/form/events.parquet"
         )
         checkpoint_store.save(existing_checkpoint)
         setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
@@ -682,7 +683,7 @@ class TestLambdaHandlerIncrementalRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -749,7 +750,7 @@ class TestLambdaHandlerIncrementalRunScenario:
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/adrc-form-events.parquet"
+            checkpoint_bucket, "checkpoints/adrc/form/events.parquet"
         )
         checkpoint_store.save(existing_checkpoint)
 
@@ -827,7 +828,7 @@ class TestLambdaHandlerIncrementalRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -917,9 +918,9 @@ class TestLambdaHandlerIncrementalRunScenario:
 
         # Use source_bucket (new implementation uses same bucket for everything)
         # Use the same template pattern that lambda will use:
-        #  {study}-{datatype}-events.parquet
+        #  {study}/{datatype}/events.parquet
         checkpoint_store = CheckpointStore(
-            source_bucket, "checkpoints/adrc-form-events.parquet"
+            source_bucket, "checkpoints/adrc/form/events.parquet"
         )
         checkpoint_store.save(existing_checkpoint)
 
@@ -1004,13 +1005,13 @@ class TestLambdaHandlerIncrementalRunScenario:
         setup_lambda_env(
             bucket=source_bucket,
             prefix="logs/2024/",
-            checkpoint_template="checkpoints/{study}-{datatype}-events.parquet",
+            checkpoint_template="checkpoints/{study}/{datatype}/events.parquet",
         )
         test_event = {}
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -1069,13 +1070,13 @@ class TestLambdaHandlerIncrementalRunScenario:
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/adrc-form-events.parquet"
+            checkpoint_bucket, "checkpoints/adrc/form/events.parquet"
         )
         _original_s3_uri = checkpoint_store.save(existing_checkpoint)
 
         # Get the original checkpoint's last modified time for comparison
         original_response = s3_client.head_object(
-            Bucket=checkpoint_bucket, Key="checkpoints/adrc-form-events.parquet"
+            Bucket=checkpoint_bucket, Key="checkpoints/adrc/form/events.parquet"
         )
         original_last_modified = original_response["LastModified"]
 
@@ -1087,7 +1088,7 @@ class TestLambdaHandlerIncrementalRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -1107,7 +1108,7 @@ class TestLambdaHandlerIncrementalRunScenario:
 
         # Verify the checkpoint file was not modified (not overwritten)
         final_response = s3_client.head_object(
-            Bucket=checkpoint_bucket, Key="checkpoints/adrc-form-events.parquet"
+            Bucket=checkpoint_bucket, Key="checkpoints/adrc/form/events.parquet"
         )
         final_last_modified = final_response["LastModified"]
         assert final_last_modified == original_last_modified  # File not modified
@@ -1149,7 +1150,7 @@ class TestLambdaHandlerIncrementalRunScenario:
 
         # Test CheckpointStore operations directly
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/adrc-form-events.parquet"
+            checkpoint_bucket, "checkpoints/adrc/form/events.parquet"
         )
 
         # Initially, checkpoint should not exist
@@ -1160,7 +1161,7 @@ class TestLambdaHandlerIncrementalRunScenario:
         existing_checkpoint = Checkpoint.from_events(existing_events)
         s3_uri = checkpoint_store.save(existing_checkpoint)
         assert (
-            s3_uri == f"s3://{checkpoint_bucket}/checkpoints/adrc-form-events.parquet"
+            s3_uri == f"s3://{checkpoint_bucket}/checkpoints/adrc/form/events.parquet"
         )
 
         # Now checkpoint should exist
@@ -1181,7 +1182,7 @@ class TestLambdaHandlerIncrementalRunScenario:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -1220,7 +1221,7 @@ class TestLambdaHandlerErrorHandling:
         # test_event = {
         #     "source_bucket": "non-existent-source-bucket",
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -1415,7 +1416,7 @@ class TestLambdaHandlerErrorHandling:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -1431,10 +1432,10 @@ class TestLambdaHandlerErrorHandling:
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
         # Use source_bucket (new implementation uses same bucket)
-        # Checkpoint is at checkpoints/adrc-form-adrc-form-events.parquet
+        # Checkpoint is at checkpoints/adrc/form/events.parquet
         #  (from default template)
         checkpoint_store = CheckpointStore(
-            source_bucket, "checkpoints/adrc-form-adrc-form-events.parquet"
+            source_bucket, "checkpoints/adrc/form/events.parquet"
         )
         assert checkpoint_store.exists()
 
@@ -1540,7 +1541,7 @@ class TestLambdaHandlerErrorHandling:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -1556,10 +1557,10 @@ class TestLambdaHandlerErrorHandling:
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
         # Use source_bucket (new implementation uses same bucket)
-        # Checkpoint is at checkpoints/adrc-form-adrc-form-events.parquet
+        # Checkpoint is at checkpoints/adrc/form/events.parquet
         #  (from default template)
         checkpoint_store = CheckpointStore(
-            source_bucket, "checkpoints/adrc-form-adrc-form-events.parquet"
+            source_bucket, "checkpoints/adrc/form/events.parquet"
         )
         assert checkpoint_store.exists()
 
@@ -1701,7 +1702,7 @@ class TestLambdaHandlerErrorHandling:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -1717,10 +1718,10 @@ class TestLambdaHandlerErrorHandling:
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
         # Use source_bucket (new implementation uses same bucket)
-        # Checkpoint is at checkpoints/adrc-form-adrc-form-events.parquet
+        # Checkpoint is at checkpoints/adrc/form/events.parquet
         # (from default template)
         checkpoint_store = CheckpointStore(
-            source_bucket, "checkpoints/adrc-form-adrc-form-events.parquet"
+            source_bucket, "checkpoints/adrc/form/events.parquet"
         )
         assert checkpoint_store.exists()
 
@@ -1893,7 +1894,7 @@ class TestLambdaHandlerErrorHandling:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -1998,7 +1999,7 @@ class TestLambdaHandlerEndToEndIntegration:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/2024/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -2093,7 +2094,7 @@ class TestLambdaHandlerEndToEndIntegration:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/",
         # }
         mock_context = Mock(spec=LambdaContext)
@@ -2160,7 +2161,7 @@ class TestLambdaHandlerEndToEndIntegration:
         # test_event = {
         #     "source_bucket": source_bucket,
         #     "checkpoint_bucket": checkpoint_bucket,
-        #     "checkpoint_key": "checkpoints/adrc-form-events.parquet",
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
         #     "prefix": "logs/",
         # }
         mock_context = Mock(spec=LambdaContext)

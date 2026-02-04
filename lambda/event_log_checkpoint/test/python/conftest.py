@@ -118,7 +118,7 @@ def lambda_config_env(setup_s3_environment):
     os.environ["PREFIX"] = os.environ.get("PREFIX", "")
     os.environ["CHECKPOINT_KEY_TEMPLATE"] = os.environ.get(
         "CHECKPOINT_KEY_TEMPLATE",
-        "checkpoints/{study}-{datatype}-events.parquet",
+        "checkpoints/{study}/{datatype}/events.parquet",
     )
 
     yield

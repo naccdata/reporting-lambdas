@@ -48,6 +48,6 @@ class CheckpointKeyTemplate:
 
         Returns:
             Checkpoint key with placeholders replaced
-            Example: "checkpoints/adrc-form-events.parquet"
+            Example: "checkpoints/adrc/form/events.parquet"
         """
         return self.template.format(study=study, datatype=datatype)

@@ -85,29 +85,29 @@ Edit the appropriate file for your environment.
 
 | Variable                  | Default                                           | Description                                                           |
 |---------------------------|---------------------------------------------------|-----------------------------------------------------------------------|
-| `checkpoint_key_template` | `"checkpoints/{study}-{datatype}-events.parquet"` | Template for checkpoint keys with {study} and {datatype} placeholders |
+| `checkpoint_key_template` | `"checkpoints/{study}/{datatype}/events.parquet"` | Template for checkpoint keys with {study} and {datatype} placeholders |
 
 **Important**: The `checkpoint_key_template` variable is required and must contain both `{study}` and `{datatype}` placeholders. The Lambda will validate this at startup and fail if placeholders are missing.
 
-**Example templates**:
+**Example templates** (choose based on your needs):
 
 ```hcl
-# Production environment (recommended)
+# Nested directory structure (recommended for Athena - one file per directory)
+checkpoint_key_template = "prod/checkpoints/{study}/{datatype}/events.parquet"
+
+# Flat structure (simpler, but all files in one directory)
 checkpoint_key_template = "prod/checkpoints/{study}-{datatype}-events.parquet"
 
-# Development environment
-checkpoint_key_template = "dev/checkpoints/{study}-{datatype}-events.parquet"
-
-# Nested folder structure
-checkpoint_key_template = "prod/checkpoints/{study}/{datatype}/events.parquet"
+# Custom organization
+checkpoint_key_template = "data/{study}/checkpoints/{datatype}.parquet"
 ```
 
-**Generated checkpoint files** (using production template):
+**Generated checkpoint files** (using nested structure):
 
-- `prod/checkpoints/adrc-form-events.parquet`
-- `prod/checkpoints/adrc-dicom-events.parquet`
-- `prod/checkpoints/dvcid-form-events.parquet`
-- `prod/checkpoints/leads-dicom-events.parquet`
+- `prod/checkpoints/adrc/form/events.parquet`
+- `prod/checkpoints/adrc/dicom/events.parquet`
+- `prod/checkpoints/dvcid/form/events.parquet`
+- `prod/checkpoints/leads/dicom/events.parquet`
 
 ### Lambda Configuration
 
@@ -217,7 +217,7 @@ force_layer_update      = true
 environment                        = "dev"
 source_bucket                      = "submission-events-dev"
 checkpoint_bucket                  = "submission-events-dev"
-checkpoint_key_template            = "dev/checkpoints/{study}-{datatype}-events.parquet"
+checkpoint_key_template            = "dev/checkpoints/{study}/{datatype}/events.parquet"
 log_level                          = "DEBUG"
 log_retention_days                 = 7
 reuse_existing_layers              = true
@@ -241,7 +241,7 @@ days_until_expiration              = 30
 environment                        = "staging"
 source_bucket                      = "submission-events-staging"
 checkpoint_bucket                  = "submission-events-staging"
-checkpoint_key_template            = "staging/checkpoints/{study}-{datatype}-events.parquet"
+checkpoint_key_template            = "staging/checkpoints/{study}/{datatype}/events.parquet"
 log_level                          = "INFO"
 log_retention_days                 = 30
 reuse_existing_layers              = true
@@ -267,7 +267,7 @@ days_until_expiration              = 0
 environment                        = "prod"
 source_bucket                      = "submission-events-prod"
 checkpoint_bucket                  = "submission-events-prod"
-checkpoint_key_template            = "prod/checkpoints/{study}-{datatype}-events.parquet"
+checkpoint_key_template            = "prod/checkpoints/{study}/{datatype}/events.parquet"
 log_level                          = "INFO"
 log_retention_days                 = 90
 reuse_existing_layers              = true
@@ -600,7 +600,7 @@ Add comments to tfvars files explaining non-obvious settings:
 
 ```hcl
 # Checkpoint key template must include {study} and {datatype} placeholders
-checkpoint_key_template = "prod/checkpoints/{study}-{datatype}-events.parquet"
+checkpoint_key_template = "prod/checkpoints/{study}/{datatype}/events.parquet"
 
 # Force layer update disabled for production stability
 force_layer_update = false

@@ -58,16 +58,22 @@ Creates separate checkpoint files for each study-datatype combination, enabling:
 
 ### Checkpoint File Naming
 
-Checkpoint files follow a configurable template pattern with placeholders:
+Checkpoint files follow a configurable template pattern with `{study}` and `{datatype}` placeholders.
 
-- **Template**: `checkpoints/{study}-{datatype}-events.parquet`
-- **Example files**:
-  - `checkpoints/adrc-form-events.parquet`
-  - `checkpoints/adrc-dicom-events.parquet`
-  - `checkpoints/dvcid-form-events.parquet`
-  - `checkpoints/leads-dicom-events.parquet`
+**Default Template**: `checkpoints/{study}/{datatype}/events.parquet`
 
-The template is configured via the `CHECKPOINT_KEY_TEMPLATE` environment variable.
+**Example Output**:
+- `checkpoints/adrc/form/events.parquet`
+- `checkpoints/adrc/dicom/events.parquet`
+- `checkpoints/dvcid/form/events.parquet`
+- `checkpoints/leads/dicom/events.parquet`
+
+**Alternative Templates**:
+- Flat structure: `checkpoints/{study}-{datatype}-events.parquet`
+- With environment prefix: `prod/checkpoints/{study}/{datatype}/events.parquet`
+- Custom naming: `data/{study}/checkpoints/{datatype}.parquet`
+
+The template is configured via the `CHECKPOINT_KEY_TEMPLATE` environment variable and must contain both `{study}` and `{datatype}` placeholders.
 
 ### Incremental Processing
 
@@ -106,7 +112,7 @@ The Lambda function uses these environment variables:
 | `BUCKET`                  | S3 bucket for event logs and checkpoints                         | `submission-events`                              | Yes      |
 | `PREFIX`                  | S3 prefix for event log files                                    | `prod/logs/` or `""` (empty for root)            | No       |
 | `CHECKPOINT_BUCKET`       | S3 bucket for checkpoint files (informational only)              | `submission-events`                              | No       |
-| `CHECKPOINT_KEY_TEMPLATE` | Template for checkpoint keys with {study} and {datatype}         | `prod/checkpoints/{study}-{datatype}-events.parquet` | Yes      |
+| `CHECKPOINT_KEY_TEMPLATE` | Template for checkpoint keys with {study} and {datatype}         | `prod/checkpoints/{study}/{datatype}/events.parquet` | Yes      |
 | `LOG_LEVEL`               | Logging level (INFO, DEBUG, WARNING)                             | `INFO`                                           | No       |
 | `ENVIRONMENT`             | Environment name (dev/staging/prod)                              | `dev`                                            | No       |
 | `POWERTOOLS_*`            | AWS Lambda Powertools configuration                              | Set automatically by framework                   | No       |
@@ -122,10 +128,10 @@ This variable defines the S3 key pattern for checkpoint files. It must contain t
 
 ```bash
 # Production environment
-CHECKPOINT_KEY_TEMPLATE="prod/checkpoints/{study}-{datatype}-events.parquet"
+CHECKPOINT_KEY_TEMPLATE="prod/checkpoints/{study}/{datatype}/events.parquet"
 
 # Development environment
-CHECKPOINT_KEY_TEMPLATE="dev/checkpoints/{study}-{datatype}-events.parquet"
+CHECKPOINT_KEY_TEMPLATE="dev/checkpoints/{study}/{datatype}/events.parquet"
 
 # Nested folder structure
 CHECKPOINT_KEY_TEMPLATE="prod/checkpoints/{study}/{datatype}/events.parquet"
