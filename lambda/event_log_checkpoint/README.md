@@ -103,10 +103,12 @@ The Lambda function uses these environment variables:
 
 | Variable                  | Description                                                      | Example                                          | Required |
 | ------------------------- | ---------------------------------------------------------------- | ------------------------------------------------ | -------- |
-| `SOURCE_BUCKET`           | S3 bucket with event log files                                   | `submission-events`                              | Yes      |
-| `CHECKPOINT_BUCKET`       | S3 bucket for checkpoint files                                   | `submission-events`                              | Yes      |
+| `BUCKET`                  | S3 bucket for event logs and checkpoints                         | `submission-events`                              | Yes      |
+| `PREFIX`                  | S3 prefix for event log files                                    | `prod/logs/` or `""` (empty for root)            | No       |
+| `CHECKPOINT_BUCKET`       | S3 bucket for checkpoint files (informational only)              | `submission-events`                              | No       |
 | `CHECKPOINT_KEY_TEMPLATE` | Template for checkpoint keys with {study} and {datatype}         | `prod/checkpoints/{study}-{datatype}-events.parquet` | Yes      |
 | `LOG_LEVEL`               | Logging level (INFO, DEBUG, WARNING)                             | `INFO`                                           | No       |
+| `ENVIRONMENT`             | Environment name (dev/staging/prod)                              | `dev`                                            | No       |
 | `POWERTOOLS_*`            | AWS Lambda Powertools configuration                              | Set automatically by framework                   | No       |
 
 ### CHECKPOINT_KEY_TEMPLATE
@@ -225,7 +227,7 @@ Build specific targets:
 
 ## Deployment
 
-See [TERRAFORM.md](./TERRAFORM.md) for detailed deployment instructions using Terraform.
+See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for detailed deployment instructions.
 
 Quick deployment:
 
@@ -234,9 +236,11 @@ Quick deployment:
 ./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda::
 
 # Deploy with Terraform
-./bin/exec-in-devcontainer.sh terraform init
+cd lambda/event_log_checkpoint
 ./bin/exec-in-devcontainer.sh terraform apply
 ```
+
+For Terraform configuration, see [docs/TERRAFORM.md](./docs/TERRAFORM.md).
 
 ## Monitoring
 
@@ -368,9 +372,10 @@ Separate layers enable fast function-only deployments.
 
 ## Related Documentation
 
-- [TERRAFORM.md](./TERRAFORM.md) - Terraform deployment guide
+- [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) - Deployment guide
+- [docs/TERRAFORM.md](./docs/TERRAFORM.md) - Terraform configuration guide
+- [docs/ENVIRONMENTS.md](./docs/ENVIRONMENTS.md) - Environment management guide (dev/staging/prod)
 - [docs/EVENT-LOG-ARCHIVAL.md](./docs/EVENT-LOG-ARCHIVAL.md) - Event log archival and lifecycle management
-- [ENVIRONMENTS.md](./ENVIRONMENTS.md) - Environment management guide (dev/staging/prod)
-- [PRODUCTION-READINESS.md](./PRODUCTION-READINESS.md) - Production readiness checklist
+- [docs/PRODUCTION-READINESS.md](./docs/PRODUCTION-READINESS.md) - Production readiness checklist
 - [context/docs/lambda-patterns.md](../../context/docs/lambda-patterns.md) - Lambda design patterns
 - [context/docs/event-log-format.md](../../context/docs/event-log-format.md) - Event log format specification

@@ -1,6 +1,6 @@
-# Terraform Deployment Guide
+# Terraform Configuration Guide
 
-This guide covers deploying the Event Log Checkpoint Lambda function using Terraform with optimized layer management strategies.
+This guide covers configuring Terraform for the Event Log Checkpoint Lambda function. For deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Infrastructure Overview
 
@@ -13,42 +13,136 @@ The Terraform configuration creates:
 - **CloudWatch alarms** for monitoring
 - **X-Ray tracing** configuration
 
-## Prerequisites
+## Workspace Management
 
-### 1. Build Lambda Packages
+This Lambda uses **Terraform workspaces** to manage multiple environments (dev, staging, prod) with isolated state.
 
-Build all Lambda artifacts using Pants:
+### Available Workspaces
+
+- **dev** - Development environment
+- **staging** - Staging environment
+- **prod** - Production environment
+
+### Workspace Commands
 
 ```bash
-./bin/start-devcontainer.sh
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda::
+# List workspaces (current marked with *)
+terraform workspace list
+
+# Switch workspace
+terraform workspace select dev
+terraform workspace select staging
+terraform workspace select prod
+
+# Show current workspace
+terraform workspace show
 ```
 
-This creates:
+**Important**: Always verify you're in the correct workspace before running Terraform commands!
 
-- `dist/lambda/event_log_checkpoint/src/python/checkpoint_lambda/lambda.zip` - Function code
-- `dist/lambda/event_log_checkpoint/src/python/checkpoint_lambda/powertools.zip` - Powertools layer
-- `dist/lambda/event_log_checkpoint/src/python/checkpoint_lambda/data_processing.zip` - Data processing layer
+## Initial Setup
 
-### 2. Terraform Installation
+### 1. Initialize Terraform
 
-Ensure Terraform >= 1.0 is installed (available in dev container).
+```bash
+cd lambda/event_log_checkpoint
+./bin/exec-in-devcontainer.sh terraform init
+```
 
-### 3. AWS Credentials
+### 2. Select Workspace
 
-Configure AWS credentials with permissions for:
+```bash
+# For dev environment
+./bin/exec-in-devcontainer.sh terraform workspace select dev
 
-- Lambda function management
-- IAM role creation
-- CloudWatch logs and alarms
-- S3 bucket access
+# For staging environment
+./bin/exec-in-devcontainer.sh terraform workspace select staging
 
-### 4. S3 Buckets
+# For prod environment
+./bin/exec-in-devcontainer.sh terraform workspace select prod
+```
 
-Create S3 buckets for:
+### 3. Configure Environment Variables
 
-- **Event logs** (source bucket)
-- **Checkpoints** (checkpoint bucket)
+Each environment has its own tfvars file:
+
+- `terraform.dev.tfvars` - Development configuration
+- `terraform.staging.tfvars` - Staging configuration
+- `terraform.prod.tfvars` - Production configuration
+
+Edit the appropriate file for your environment.
+
+## Configuration Variables
+
+### Required Variables
+
+| Variable            | Description                          | Example               |
+|---------------------|--------------------------------------|-----------------------|
+| `source_bucket`     | S3 bucket containing event log files | `"submission-events"` |
+| `checkpoint_bucket` | S3 bucket for checkpoint files       | `"submission-events"` |
+
+### Checkpoint Configuration
+
+| Variable                  | Default                                           | Description                                                           |
+|---------------------------|---------------------------------------------------|-----------------------------------------------------------------------|
+| `checkpoint_key_template` | `"checkpoints/{study}-{datatype}-events.parquet"` | Template for checkpoint keys with {study} and {datatype} placeholders |
+
+**Important**: The `checkpoint_key_template` variable is required and must contain both `{study}` and `{datatype}` placeholders. The Lambda will validate this at startup and fail if placeholders are missing.
+
+**Example templates**:
+
+```hcl
+# Production environment (recommended)
+checkpoint_key_template = "prod/checkpoints/{study}-{datatype}-events.parquet"
+
+# Development environment
+checkpoint_key_template = "dev/checkpoints/{study}-{datatype}-events.parquet"
+
+# Nested folder structure
+checkpoint_key_template = "prod/checkpoints/{study}/{datatype}/events.parquet"
+```
+
+**Generated checkpoint files** (using production template):
+
+- `prod/checkpoints/adrc-form-events.parquet`
+- `prod/checkpoints/adrc-dicom-events.parquet`
+- `prod/checkpoints/dvcid-form-events.parquet`
+- `prod/checkpoints/leads-dicom-events.parquet`
+
+### Lambda Configuration
+
+| Variable             | Default | Description                        |
+|----------------------|---------|------------------------------------|
+| `environment`        | `"dev"` | Environment name (dev/staging/prod) |
+| `log_level`          | `"INFO"`| Lambda logging level               |
+| `lambda_timeout`     | `900`   | Lambda timeout in seconds (15 min) |
+| `lambda_memory_size` | `3008`  | Lambda memory in MB (3GB)          |
+
+### CloudWatch Configuration
+
+| Variable             | Default | Description                  |
+|----------------------|---------|------------------------------|
+| `log_retention_days` | `30`    | CloudWatch log retention     |
+| `alarm_sns_topic_arn`| `""`    | SNS topic for alarms (optional) |
+
+### Layer Management Configuration
+
+| Variable                  | Default | Description                        |
+|---------------------------|---------|------------------------------------|
+| `reuse_existing_layers`   | `true`  | Reuse existing layers if available |
+| `use_external_layer_arns` | `false` | Use external layer ARNs            |
+| `force_layer_update`      | `false` | Force layer updates                |
+| `external_layer_arns`     | `[]`    | List of external layer ARNs        |
+
+### S3 Lifecycle Configuration
+
+| Variable                             | Default | Description                          |
+|--------------------------------------|---------|--------------------------------------|
+| `manage_source_bucket_lifecycle`     | `false` | Manage S3 lifecycle policy           |
+| `enable_event_log_archival`          | `true`  | Enable archival to Glacier           |
+| `days_until_glacier_transition`      | `90`    | Days before Glacier transition       |
+| `days_until_deep_archive_transition` | `365`   | Days before Deep Archive (0=disable) |
+| `days_until_expiration`              | `0`     | Days before deletion (0=never)       |
 
 ## Layer Management Strategies
 
@@ -95,9 +189,9 @@ external_layer_arns = [
 
 ### Strategy 3: Force Layer Updates
 
-**Best for**: Development environments requiring latest dependencies.
+**Best for**: Testing layer deployment or forcing new versions without content changes.
 
-Always creates new layer versions on every deployment.
+Always creates new layer versions on every deployment, even if content hasn't changed.
 
 ```hcl
 reuse_existing_layers   = false
@@ -108,116 +202,96 @@ force_layer_update      = true
 **Behavior**:
 
 - Creates new layer versions every time
-- Ensures latest dependencies are deployed
-- Increases layer storage costs
+- Bypasses content hash checking
+- Useful for testing or troubleshooting
 
-## Quick Start
+**Note**: This is rarely needed in practice. Terraform automatically detects layer content changes via `source_code_hash` and creates new versions when the zip file changes. Use this only when you need to force a new version for testing purposes.
 
-### 1. Copy Example Variables
+## Environment-Specific Configuration
 
-```bash
-cd lambda/event_log_checkpoint
-cp terraform.tfvars.example terraform.tfvars
-```
+### Development Environment
 
-### 2. Configure Variables
-
-Edit `terraform.tfvars` with your configuration:
+**File**: `terraform.dev.tfvars`
 
 ```hcl
-source_bucket          = "your-event-logs-bucket"
-checkpoint_bucket      = "your-checkpoint-bucket"
-checkpoint_key_template = "checkpoints/{study}-{datatype}-events.parquet"
-environment            = "dev"
-log_level              = "INFO"
+environment                        = "dev"
+source_bucket                      = "submission-events-dev"
+checkpoint_bucket                  = "submission-events-dev"
+checkpoint_key_template            = "dev/checkpoints/{study}-{datatype}-events.parquet"
+log_level                          = "DEBUG"
+log_retention_days                 = 7
+reuse_existing_layers              = true
+force_layer_update                 = false
+manage_source_bucket_lifecycle     = true
+enable_event_log_archival          = false
+days_until_expiration              = 30
 ```
 
-### 3. Initialize Terraform
+**Characteristics**:
+- Debug logging enabled
+- Short log retention (7 days)
+- Automatic layer reuse
+- Event logs deleted after 30 days (no archival)
 
-```bash
-./bin/exec-in-devcontainer.sh terraform init
-```
+### Staging Environment
 
-### 4. Plan Deployment
-
-```bash
-./bin/exec-in-devcontainer.sh terraform plan
-```
-
-### 5. Apply Configuration
-
-```bash
-./bin/exec-in-devcontainer.sh terraform apply
-```
-
-## Configuration Variables
-
-### Required Variables
-
-| Variable            | Description                         | Example                |
-| ------------------- | ----------------------------------- | ---------------------- |
-| `source_bucket`     | S3 bucket containing event log files | `"submission-events"`  |
-| `checkpoint_bucket` | S3 bucket for checkpoint files      | `"submission-events"`  |
-
-### Checkpoint Configuration
-
-| Variable                  | Default                                          | Description                                                      |
-| ------------------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
-| `checkpoint_key_template` | `"checkpoints/{study}-{datatype}-events.parquet"` | Template for checkpoint keys with {study} and {datatype} placeholders |
-
-**Important**: The `checkpoint_key_template` variable is required and must contain both `{study}` and `{datatype}` placeholders. The Lambda will validate this at startup and fail if placeholders are missing.
-
-**Example templates**:
+**File**: `terraform.staging.tfvars`
 
 ```hcl
-# Production environment (recommended)
-checkpoint_key_template = "prod/checkpoints/{study}-{datatype}-events.parquet"
-
-# Development environment
-checkpoint_key_template = "dev/checkpoints/{study}-{datatype}-events.parquet"
-
-# Nested folder structure
-checkpoint_key_template = "prod/checkpoints/{study}/{datatype}/events.parquet"
+environment                        = "staging"
+source_bucket                      = "submission-events-staging"
+checkpoint_bucket                  = "submission-events-staging"
+checkpoint_key_template            = "staging/checkpoints/{study}-{datatype}-events.parquet"
+log_level                          = "INFO"
+log_retention_days                 = 30
+reuse_existing_layers              = true
+force_layer_update                 = false
+manage_source_bucket_lifecycle     = true
+enable_event_log_archival          = true
+days_until_glacier_transition      = 90
+days_until_deep_archive_transition = 0
+days_until_expiration              = 0
 ```
 
-**Generated checkpoint files** (using production template):
+**Characteristics**:
+- Info logging
+- Standard log retention (30 days)
+- Automatic layer reuse
+- Event logs archived to Glacier after 90 days, kept forever
 
-- `prod/checkpoints/adrc-form-events.parquet`
-- `prod/checkpoints/adrc-dicom-events.parquet`
-- `prod/checkpoints/dvcid-form-events.parquet`
-- `prod/checkpoints/leads-dicom-events.parquet`
+### Production Environment
 
-### Optional Variables
+**File**: `terraform.prod.tfvars`
 
-| Variable                       | Default                                          | Description                           |
-| ------------------------------ | ------------------------------------------------ | ------------------------------------- |
-| `environment`                  | `"dev"`                                          | Environment name (dev/staging/prod)   |
-| `log_level`                    | `"INFO"`                                         | Lambda logging level                  |
-| `lambda_timeout`               | `900`                                            | Lambda timeout in seconds (15 min)    |
-| `lambda_memory_size`           | `3008`                                           | Lambda memory in MB (3GB)             |
-| `log_retention_days`           | `30`                                             | CloudWatch log retention              |
-| `reuse_existing_layers`        | `true`                                           | Reuse existing layers if available    |
-| `use_external_layer_arns`      | `false`                                          | Use external layer ARNs               |
-| `force_layer_update`           | `false`                                          | Force layer updates                   |
-| `external_layer_arns`          | `[]`                                             | List of external layer ARNs           |
-| `alarm_sns_topic_arn`          | `""`                                             | SNS topic for alarms (optional)       |
-| `manage_source_bucket_lifecycle` | `false`                                        | Manage S3 lifecycle policy            |
-| `enable_event_log_archival`    | `true`                                           | Enable archival to Glacier            |
-| `days_until_glacier_transition` | `90`                                            | Days before Glacier transition        |
-| `days_until_deep_archive_transition` | `365`                                      | Days before Deep Archive (0=disable)  |
-| `days_until_expiration`        | `0`                                              | Days before deletion (0=never)        |
+```hcl
+environment                        = "prod"
+source_bucket                      = "submission-events-prod"
+checkpoint_bucket                  = "submission-events-prod"
+checkpoint_key_template            = "prod/checkpoints/{study}-{datatype}-events.parquet"
+log_level                          = "INFO"
+log_retention_days                 = 90
+reuse_existing_layers              = true
+force_layer_update                 = false
+alarm_sns_topic_arn                = "arn:aws:sns:us-east-1:123456789012:lambda-alarms"
+manage_source_bucket_lifecycle     = true
+enable_event_log_archival          = true
+days_until_glacier_transition      = 90
+days_until_deep_archive_transition = 365
+days_until_expiration              = 0
+```
 
-### S3 Lifecycle Management
+**Characteristics**:
+- Info logging
+- Extended log retention (90 days)
+- SNS alerts configured
+- Automatic layer reuse for stability
+- Event logs: Glacier (90 days) → Deep Archive (1 year), kept forever
+
+## S3 Lifecycle Management
 
 The configuration supports automatic archival of event log files to reduce storage costs. See [EVENT-LOG-ARCHIVAL.md](./EVENT-LOG-ARCHIVAL.md) for detailed information.
 
-**Environment-specific configurations**:
-
-- **Dev**: Delete files after 30 days (no archival)
-- **Staging**: Archive to Glacier after 90 days, keep forever
-- **Production**: Archive to Glacier (90 days) → Deep Archive (1 year), keep forever
-
-To enable lifecycle management:
+### Enable Lifecycle Management
 
 ```hcl
 manage_source_bucket_lifecycle     = true
@@ -227,67 +301,57 @@ days_until_deep_archive_transition = 365
 days_until_expiration              = 0
 ```
 
-## Deployment Workflows
+### Lifecycle Transitions
 
-### Development Environment
+**Standard → Glacier**:
+- After `days_until_glacier_transition` days
+- Reduces storage costs by ~90%
+- Retrieval time: minutes to hours
 
-Fast iteration with automatic layer management:
+**Glacier → Deep Archive**:
+- After `days_until_deep_archive_transition` days
+- Set to `0` to disable
+- Reduces storage costs by ~95%
+- Retrieval time: 12-48 hours
 
-```bash
-# Build packages
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda::
+**Expiration**:
+- After `days_until_expiration` days
+- Set to `0` to keep forever
+- Permanently deletes files
 
-# Deploy with layer reuse
-./bin/exec-in-devcontainer.sh terraform apply -var="reuse_existing_layers=true"
+## Monitoring Configuration
+
+### CloudWatch Alarms
+
+The infrastructure includes two CloudWatch alarms:
+
+#### Error Alarm
+
+- **Metric**: Lambda errors
+- **Threshold**: > 0 errors
+- **Period**: 5 minutes
+- **Evaluation**: 1 period
+
+#### Duration Alarm
+
+- **Metric**: Lambda duration
+- **Threshold**: > 600,000 ms (10 minutes)
+- **Period**: 5 minutes
+- **Evaluation**: 1 period
+
+### SNS Notifications
+
+Configure SNS notifications by setting `alarm_sns_topic_arn`:
+
+```hcl
+alarm_sns_topic_arn = "arn:aws:sns:us-east-1:123456789012:lambda-alarms"
 ```
 
-### Staging Environment
+### CloudWatch Logs
 
-Test with specific layer versions:
-
-```bash
-# Deploy with layer reuse
-./bin/exec-in-devcontainer.sh terraform apply \
-  -var="environment=staging" \
-  -var="reuse_existing_layers=true"
-```
-
-### Production Environment
-
-Use specific layer versions for stability:
-
-```bash
-# Deploy with external layer ARNs
-./bin/exec-in-devcontainer.sh terraform apply \
-  -var="environment=prod" \
-  -var="use_external_layer_arns=true" \
-  -var='external_layer_arns=["arn:aws:lambda:us-east-1:123456789012:layer:powertools:5","arn:aws:lambda:us-east-1:123456789012:layer:data-processing:3"]'
-```
-
-### Function-Only Updates
-
-For code changes without dependency updates:
-
-```bash
-# Build only function package
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:lambda
-
-# Deploy only function
-./bin/exec-in-devcontainer.sh terraform apply -target=aws_lambda_function.event_log_checkpoint
-```
-
-### Layer-Only Updates
-
-Update layers without changing function code:
-
-```bash
-# Build layer packages
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:powertools
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:data_processing
-
-# Deploy with force update
-./bin/exec-in-devcontainer.sh terraform apply -var="force_layer_update=true"
-```
+- **Log group**: `/aws/lambda/event-log-checkpoint-{environment}`
+- **Retention**: Configurable (default: 30 days)
+- **Format**: Structured JSON with correlation IDs
 
 ## Terraform Outputs
 
@@ -324,125 +388,7 @@ The configuration provides comprehensive outputs after deployment:
 - `environment_variables` - Lambda environment variables
 - `layer_strategy` - Active layer management strategy
 
-## Monitoring and Alarms
-
-### CloudWatch Alarms
-
-The infrastructure includes two CloudWatch alarms:
-
-#### Error Alarm
-
-- **Metric**: Lambda errors
-- **Threshold**: > 0 errors
-- **Period**: 5 minutes
-- **Evaluation**: 1 period
-
-#### Duration Alarm
-
-- **Metric**: Lambda duration
-- **Threshold**: > 600,000 ms (10 minutes)
-- **Period**: 5 minutes
-- **Evaluation**: 1 period
-
-### SNS Notifications
-
-Configure SNS notifications by setting `alarm_sns_topic_arn`:
-
-```hcl
-alarm_sns_topic_arn = "arn:aws:sns:us-east-1:123456789012:lambda-alarms"
-```
-
-### CloudWatch Logs
-
-- **Log group**: `/aws/lambda/event-log-checkpoint-{environment}`
-- **Retention**: Configurable (default: 30 days)
-- **Format**: Structured JSON with correlation IDs
-
-## Cost Optimization
-
-### Layer Storage Costs
-
-- Each layer version consumes storage space (~20-25MB total)
-- Old versions can be cleaned up after successful deployments
-- Use `reuse_existing_layers=true` to minimize layer creation
-
-### Deployment Time Optimization
-
-| Strategy                | Deployment Time | Use Case                    |
-| ----------------------- | --------------- | --------------------------- |
-| External layer ARNs     | ~30 seconds     | Production, stable layers   |
-| Layer reuse             | ~60 seconds     | Development, most deploys   |
-| Function-only update    | ~45 seconds     | Code changes only           |
-| Force layer update      | ~90 seconds     | Dependency updates          |
-
-### Lambda Execution Costs
-
-- **Memory**: 3GB recommended for large datasets
-- **Duration**: Most executions < 5 minutes
-- **Invocations**: Depends on event log volume
-
-Monitor CloudWatch metrics to optimize memory and timeout settings.
-
-## Troubleshooting
-
-### Common Issues
-
-#### Missing Build Artifacts
-
-**Error**: `Error: error creating Lambda Function: InvalidParameterValueException`
-
-**Solution**: Ensure Pants packages are built before deployment:
-
-```bash
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda::
-```
-
-#### Layer Size Limits
-
-**Error**: `Error: error creating Lambda Layer: InvalidParameterValueException: Unzipped size must be smaller than 262144000 bytes`
-
-**Solution**: Each layer must be < 250MB unzipped. Check layer contents and dependencies.
-
-#### Permission Errors
-
-**Error**: `Error: error creating Lambda Function: AccessDeniedException`
-
-**Solution**: Verify AWS credentials and IAM permissions for Lambda, IAM, and CloudWatch.
-
-#### Layer Not Found
-
-**Error**: `Error: error creating Lambda Function: ResourceNotFoundException: Layer version not found`
-
-**Solution**: Check layer names and regions match. Ensure layers are created before function.
-
-### Debugging Terraform
-
-#### Enable Debug Logging
-
-```bash
-export TF_LOG=DEBUG
-./bin/exec-in-devcontainer.sh terraform apply
-```
-
-#### Validate Configuration
-
-```bash
-./bin/exec-in-devcontainer.sh terraform validate
-```
-
-#### Format Configuration
-
-```bash
-./bin/exec-in-devcontainer.sh terraform fmt
-```
-
-#### Show Current State
-
-```bash
-./bin/exec-in-devcontainer.sh terraform show
-```
-
-## Security Best Practices
+## Security Configuration
 
 ### IAM Permissions
 
@@ -453,13 +399,9 @@ The Lambda function has minimal required permissions:
 - **CloudWatch logs**: Write access for logging
 - **X-Ray**: Write access for tracing
 
-### Terraform State
+### Terraform State Management
 
-- Store Terraform state in S3 with encryption
-- Enable state locking with DynamoDB
-- Use separate state files per environment
-
-Example backend configuration:
+Store Terraform state in S3 with encryption:
 
 ```hcl
 terraform {
@@ -473,82 +415,212 @@ terraform {
 }
 ```
 
+**Best practices**:
+- Enable S3 versioning for state recovery
+- Use DynamoDB for state locking (optional)
+- Use separate state files per environment
+- Encrypt state at rest
+
 ### Secrets Management
 
-- Use AWS Secrets Manager or Parameter Store for sensitive values
+For sensitive values:
+
+- Use AWS Secrets Manager or Parameter Store
 - Never commit secrets to version control
 - Use Terraform data sources to retrieve secrets
 
-## Multi-Environment Deployment
+Example:
 
-### Workspace Strategy
+```hcl
+data "aws_secretsmanager_secret_version" "api_key" {
+  secret_id = "lambda/event-log-checkpoint/api-key"
+}
 
-Use Terraform workspaces for multiple environments:
+resource "aws_lambda_function" "event_log_checkpoint" {
+  environment {
+    variables = {
+      API_KEY = data.aws_secretsmanager_secret_version.api_key.secret_string
+    }
+  }
+}
+```
+
+## Multi-Environment Configuration
+
+This Lambda uses **Terraform workspaces** to isolate state between environments.
+
+### Workspace-Based Deployment
+
+Each environment has its own workspace and variable file:
 
 ```bash
-# Create workspaces
-./bin/exec-in-devcontainer.sh terraform workspace new dev
-./bin/exec-in-devcontainer.sh terraform workspace new staging
-./bin/exec-in-devcontainer.sh terraform workspace new prod
+# Deploy to dev
+terraform workspace select dev
+terraform apply -var-file="terraform.dev.tfvars"
 
-# Switch workspace
-./bin/exec-in-devcontainer.sh terraform workspace select dev
+# Deploy to staging
+terraform workspace select staging
+terraform apply -var-file="terraform.staging.tfvars"
 
-# Deploy to current workspace
+# Deploy to prod
+terraform workspace select prod
+terraform apply -var-file="terraform.prod.tfvars"
+```
+
+### Workspace Isolation
+
+Each workspace maintains separate state:
+
+- **dev workspace** → Separate state for dev resources
+- **staging workspace** → Separate state for staging resources  
+- **prod workspace** → Separate state for prod resources
+
+**Benefits**:
+- Changes in dev don't affect staging or prod
+- Deploy different versions to each environment
+- Each environment has isolated AWS resources
+
+### Resource Naming
+
+Resources are named with the environment suffix:
+
+- **Dev**: `event-log-checkpoint-dev`, `event-log-checkpoint-powertools-dev`
+- **Staging**: `event-log-checkpoint-staging`, `event-log-checkpoint-powertools-staging`
+- **Prod**: `event-log-checkpoint-prod`, `event-log-checkpoint-powertools-prod`
+
+### Best Practices
+
+1. **Always verify workspace** before running commands:
+   ```bash
+   terraform workspace show
+   ```
+
+2. **Match workspace and tfvars file**:
+   ```bash
+   # ✅ Correct
+   terraform workspace select dev
+   terraform apply -var-file="terraform.dev.tfvars"
+   
+   # ❌ Wrong - mismatched
+   terraform workspace select dev
+   terraform apply -var-file="terraform.prod.tfvars"
+   ```
+
+3. **Deploy in order**: dev → staging → prod
+
+## Cost Optimization
+
+### Layer Storage Costs
+
+- Each layer version consumes storage space (~20-25MB total)
+- Old versions can be cleaned up after successful deployments
+- Use `reuse_existing_layers=true` to minimize layer creation
+
+### Lambda Execution Costs
+
+- **Memory**: 3GB recommended for large datasets
+- **Duration**: Most executions < 5 minutes
+- **Invocations**: Depends on event log volume
+
+Monitor CloudWatch metrics to optimize memory and timeout settings.
+
+### S3 Storage Costs
+
+Use lifecycle policies to reduce storage costs:
+
+- **Standard**: $0.023/GB/month
+- **Glacier**: $0.004/GB/month (83% savings)
+- **Deep Archive**: $0.00099/GB/month (96% savings)
+
+## Terraform Utilities
+
+### Validate Configuration
+
+```bash
+./bin/exec-in-devcontainer.sh terraform validate
+```
+
+### Format Configuration
+
+```bash
+./bin/exec-in-devcontainer.sh terraform fmt
+```
+
+### Show Current State
+
+```bash
+./bin/exec-in-devcontainer.sh terraform show
+```
+
+### Plan Changes
+
+```bash
+./bin/exec-in-devcontainer.sh terraform plan -var-file="terraform.prod.tfvars"
+```
+
+### Enable Debug Logging
+
+```bash
+export TF_LOG=DEBUG
 ./bin/exec-in-devcontainer.sh terraform apply
 ```
 
-### Variable Files Strategy
+## Configuration Best Practices
 
-Use separate variable files per environment:
+### 1. Use Variable Files
 
-```bash
-# Development
-./bin/exec-in-devcontainer.sh terraform apply -var-file="dev.tfvars"
+Keep environment-specific configuration in separate tfvars files:
 
-# Staging
-./bin/exec-in-devcontainer.sh terraform apply -var-file="staging.tfvars"
-
-# Production
-./bin/exec-in-devcontainer.sh terraform apply -var-file="prod.tfvars"
+```hcl
+# terraform.prod.tfvars
+environment       = "prod"
+source_bucket     = "submission-events-prod"
+checkpoint_bucket = "submission-events-prod"
 ```
 
-## Cleanup
+### 2. Never Commit Secrets
 
-### Destroy All Resources
+Use `.gitignore` to exclude sensitive files:
 
-```bash
-./bin/exec-in-devcontainer.sh terraform destroy
+```
+# .gitignore
+terraform.tfvars
+*.tfstate
+*.tfstate.backup
+.terraform/
 ```
 
-**Note**: This will delete the Lambda function and layers but preserve S3 buckets and their contents.
+### 3. Use Remote State
 
-### Destroy Specific Resources
+Store Terraform state in S3 with versioning enabled for recovery.
 
-```bash
-# Destroy only Lambda function
-./bin/exec-in-devcontainer.sh terraform destroy -target=aws_lambda_function.event_log_checkpoint
+### 4. Document Configuration
 
-# Destroy only layers
-./bin/exec-in-devcontainer.sh terraform destroy -target=aws_lambda_layer_version.powertools
-./bin/exec-in-devcontainer.sh terraform destroy -target=aws_lambda_layer_version.data_processing
+Add comments to tfvars files explaining non-obvious settings:
+
+```hcl
+# Checkpoint key template must include {study} and {datatype} placeholders
+checkpoint_key_template = "prod/checkpoints/{study}-{datatype}-events.parquet"
+
+# Force layer update disabled for production stability
+force_layer_update = false
 ```
 
-### Clean Up Old Layer Versions
+### 5. Version Control Configuration
 
-Old layer versions are not automatically deleted. Clean them up manually:
+Commit to version control:
+- `*.tf` files
+- `terraform.tfvars.example`
+- Environment-specific tfvars files (if no secrets)
 
-```bash
-# List layer versions
-aws lambda list-layer-versions --layer-name event-log-checkpoint-powertools
-
-# Delete specific version
-aws lambda delete-layer-version --layer-name event-log-checkpoint-powertools --version-number 1
-```
+Do not commit:
+- `terraform.tfvars` (if contains secrets)
+- `.terraform/` directory
+- `*.tfstate` files
 
 ## Related Documentation
 
+- [DEPLOYMENT.md](./DEPLOYMENT.md) - Deployment guide
+- [ENVIRONMENTS.md](./ENVIRONMENTS.md) - Environment management
+- [EVENT-LOG-ARCHIVAL.md](./EVENT-LOG-ARCHIVAL.md) - S3 lifecycle management
 - [README.md](../README.md) - Lambda function overview
-- [EVENT-LOG-ARCHIVAL.md](./EVENT-LOG-ARCHIVAL.md) - Event log archival and lifecycle management
-- [terraform/modules/README.md](../../terraform/modules/README.md) - Terraform modules documentation
-- [context/docs/deployment-guide.md](../../context/docs/deployment-guide.md) - General deployment guide
