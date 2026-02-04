@@ -70,7 +70,7 @@ This implementation plan breaks down the checkpoint filtering and grouping featu
     - Verify validation fails when placeholders missing
   
   - [ ]* 3.4 Write unit tests for CheckpointKeyTemplate
-    - Test specific template: "checkpoints/{study}-{datatype}-events.parquet"
+    - Test specific template: "checkpoints/{study}/{datatype}/events.parquet"
     - Test specific expansions: "adrc-form", "dvcid-form", "leads-dicom"
     - Test missing {study} placeholder
     - Test missing {datatype} placeholder
@@ -186,7 +186,7 @@ This implementation plan breaks down the checkpoint filtering and grouping featu
 - [x] 10. Update environment configuration
   - [x] 10.1 Update Terraform configuration
     - Add CHECKPOINT_KEY_TEMPLATE environment variable
-    - Set default value: "checkpoints/{study}-{datatype}-events.parquet"
+    - Set default value: "checkpoints/{study}/{datatype}/events.parquet"
     - Update Lambda function configuration
     - _Requirements: 4.1, 4.2_
   

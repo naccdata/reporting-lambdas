@@ -36,11 +36,11 @@ This specification defines enhancements to the Event Log Checkpoint Lambda to su
 #### Acceptance Criteria
 
 1. WHEN processing events, THE Event_Log_Checkpoint_Lambda SHALL group events by their study and datatype field values
-2. WHEN events contain study "adrc" and datatype "form", THE Event_Log_Checkpoint_Lambda SHALL write them to a checkpoint file named "adrc-form-events.parquet"
-3. WHEN events contain study "adrc" and datatype "dicom", THE Event_Log_Checkpoint_Lambda SHALL write them to a checkpoint file named "adrc-dicom-events.parquet"
-4. WHEN events contain study "dvcid" and datatype "form", THE Event_Log_Checkpoint_Lambda SHALL write them to a checkpoint file named "dvcid-form-events.parquet"
-5. WHEN events contain study "leads" and datatype "dicom", THE Event_Log_Checkpoint_Lambda SHALL write them to a checkpoint file named "leads-dicom-events.parquet"
-6. WHEN events contain any valid study and datatype combination, THE Event_Log_Checkpoint_Lambda SHALL write them to a checkpoint file named "{study}-{datatype}-events.parquet"
+2. WHEN events contain study "adrc" and datatype "form", THE Event_Log_Checkpoint_Lambda SHALL write them to a checkpoint file named "adrc/form/events.parquet"
+3. WHEN events contain study "adrc" and datatype "dicom", THE Event_Log_Checkpoint_Lambda SHALL write them to a checkpoint file named "adrc/dicom/events.parquet"
+4. WHEN events contain study "dvcid" and datatype "form", THE Event_Log_Checkpoint_Lambda SHALL write them to a checkpoint file named "dvcid/form/events.parquet"
+5. WHEN events contain study "leads" and datatype "dicom", THE Event_Log_Checkpoint_Lambda SHALL write them to a checkpoint file named "leads/dicom/events.parquet"
+6. WHEN events contain any valid study and datatype combination, THE Event_Log_Checkpoint_Lambda SHALL write them to a checkpoint file named "{study}/{datatype}/events.parquet"
 
 ### Requirement 3: Independent Checkpoint Management
 
@@ -61,7 +61,7 @@ This specification defines enhancements to the Event Log Checkpoint Lambda to su
 #### Acceptance Criteria
 
 1. WHEN CHECKPOINT_KEY_TEMPLATE environment variable is set with "{study}" and "{datatype}" placeholders, THE Event_Log_Checkpoint_Lambda SHALL create separate checkpoint files per study-datatype combination
-2. WHEN CHECKPOINT_KEY_TEMPLATE is "checkpoints/{study}-{datatype}-events.parquet", THE Event_Log_Checkpoint_Lambda SHALL generate paths like "checkpoints/adrc-form-events.parquet"
+2. WHEN CHECKPOINT_KEY_TEMPLATE is "checkpoints/{study}/{datatype}/events.parquet", THE Event_Log_Checkpoint_Lambda SHALL generate paths like "checkpoints/adrc/form/events.parquet"
 3. WHEN CHECKPOINT_KEY_TEMPLATE is not set, THE Event_Log_Checkpoint_Lambda SHALL return a validation error
 4. WHEN CHECKPOINT_KEY_TEMPLATE is set but missing required placeholders, THE Event_Log_Checkpoint_Lambda SHALL return a validation error
 

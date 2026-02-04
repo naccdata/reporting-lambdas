@@ -221,7 +221,7 @@ class CheckpointKeyTemplate:
             
         Returns:
             Checkpoint key with placeholders replaced
-            Example: "checkpoints/adrc-form-events.parquet"
+            Example: "checkpoints/adrc/form/events.parquet"
         """
         pass
 ```
@@ -579,7 +579,7 @@ A property is a characteristic or behavior that should hold true across all vali
 
 ### Property 3: Template Key Generation
 
-*For any* valid study and datatype strings, the template "checkpoints/{study}-{datatype}-events.parquet" should generate a key in the format "checkpoints/{study}-{datatype}-events.parquet" with placeholders replaced by the actual values.
+*For any* valid study and datatype strings, the template "checkpoints/{study}/{datatype}/events.parquet" should generate a key in the format "checkpoints/{study}/{datatype}/events.parquet" with placeholders replaced by the actual values.
 
 **Validates: Requirements 2.2, 2.3, 2.4, 2.5, 2.6**
 
@@ -633,7 +633,7 @@ This feature requires both unit tests and property-based tests for comprehensive
 
 **Unit Tests** focus on:
 - Specific examples of sandbox filtering (e.g., "sandbox-form", "ingest-form")
-- Specific template expansions (e.g., "adrc-form-events.parquet")
+- Specific template expansions (e.g., "adrc/form/events.parquet")
 - Logging output verification (structured log format and content)
 - Metrics emission verification (CloudWatch metric names and dimensions)
 - Error handling for specific failure scenarios
