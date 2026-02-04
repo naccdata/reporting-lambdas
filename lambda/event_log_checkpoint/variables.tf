@@ -25,7 +25,7 @@ variable "checkpoint_bucket" {
 variable "checkpoint_key_template" {
   description = "Template for checkpoint S3 keys with {study} and {datatype} placeholders"
   type        = string
-  default     = "checkpoints/{study}-{datatype}-events.parquet"
+  default     = "checkpoints/{study}/{datatype}/events.parquet"
 
   validation {
     condition     = can(regex("\\{study\\}", var.checkpoint_key_template)) && can(regex("\\{datatype\\}", var.checkpoint_key_template))

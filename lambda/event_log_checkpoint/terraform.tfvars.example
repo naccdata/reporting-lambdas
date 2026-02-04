@@ -6,7 +6,7 @@ source_bucket     = "submission-events"
 checkpoint_bucket = "submission-events"
 
 # Optional: Checkpoint configuration
-checkpoint_key_template = "prod/checkpoints/{study}-{datatype}-events.parquet"  # Template with {study} and {datatype} placeholders
+checkpoint_key_template = "prod/checkpoints/{study}/{datatype}/events.parquet"  # Template with {study} and {datatype} placeholders
 environment             = "prod"
 log_level               = "INFO"
 
