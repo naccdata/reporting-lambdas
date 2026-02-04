@@ -145,11 +145,11 @@ output "layer_management_strategy" {
 output "deployment_info" {
   description = "Information about the deployment configuration"
   value = {
-    source_bucket     = var.source_bucket
-    checkpoint_bucket = var.checkpoint_bucket
-    checkpoint_key    = var.checkpoint_key
-    environment       = var.environment
-    log_level         = var.log_level
+    source_bucket           = var.source_bucket
+    checkpoint_bucket       = var.checkpoint_bucket
+    checkpoint_key_template = var.checkpoint_key_template
+    environment             = var.environment
+    log_level               = var.log_level
   }
 }
 

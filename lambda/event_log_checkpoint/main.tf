@@ -188,7 +188,8 @@ resource "aws_lambda_function" "event_log_checkpoint" {
 
   environment {
     variables = {
-      SOURCE_BUCKET           = var.source_bucket
+      BUCKET                  = var.source_bucket
+      PREFIX                  = var.event_log_prefix
       CHECKPOINT_BUCKET       = var.checkpoint_bucket
       CHECKPOINT_KEY_TEMPLATE = var.checkpoint_key_template
       LOG_LEVEL               = var.log_level

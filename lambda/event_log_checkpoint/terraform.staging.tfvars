@@ -16,8 +16,9 @@ lambda_memory_size = 3008 # 3GB
 log_retention_days = 30   # Standard retention for staging
 
 # Layer Management
-# Reuse layers for faster deployments
-reuse_existing_layers   = true
+# IMPORTANT: For first deployment, set reuse_existing_layers = false
+# After first deployment, change to true for faster deployments
+reuse_existing_layers   = false  # Set to true after first deployment
 use_external_layer_arns = false
 force_layer_update      = false
 
