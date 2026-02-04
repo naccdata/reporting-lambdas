@@ -125,10 +125,11 @@ cp terraform.tfvars.example terraform.tfvars
 Edit `terraform.tfvars` with your configuration:
 
 ```hcl
-source_bucket     = "your-event-logs-bucket"
-checkpoint_bucket = "your-checkpoint-bucket"
-environment       = "dev"
-log_level         = "INFO"
+source_bucket          = "your-event-logs-bucket"
+checkpoint_bucket      = "your-checkpoint-bucket"
+checkpoint_key_template = "checkpoints/{study}-{datatype}-events.parquet"
+environment            = "dev"
+log_level              = "INFO"
 ```
 
 ### 3. Initialize Terraform
@@ -155,29 +156,56 @@ log_level         = "INFO"
 
 | Variable            | Description                         | Example                |
 | ------------------- | ----------------------------------- | ---------------------- |
-| `source_bucket`     | S3 bucket containing event log files | `"nacc-event-logs"`    |
-| `checkpoint_bucket` | S3 bucket for checkpoint files      | `"nacc-checkpoints"`   |
+| `source_bucket`     | S3 bucket containing event log files | `"submission-events"`  |
+| `checkpoint_bucket` | S3 bucket for checkpoint files      | `"submission-events"`  |
+
+### Checkpoint Configuration
+
+| Variable                  | Default                                          | Description                                                      |
+| ------------------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
+| `checkpoint_key_template` | `"checkpoints/{study}-{datatype}-events.parquet"` | Template for checkpoint keys with {study} and {datatype} placeholders |
+
+**Important**: The `checkpoint_key_template` variable is required and must contain both `{study}` and `{datatype}` placeholders. The Lambda will validate this at startup and fail if placeholders are missing.
+
+**Example templates**:
+
+```hcl
+# Production environment (recommended)
+checkpoint_key_template = "prod/checkpoints/{study}-{datatype}-events.parquet"
+
+# Development environment
+checkpoint_key_template = "dev/checkpoints/{study}-{datatype}-events.parquet"
+
+# Nested folder structure
+checkpoint_key_template = "prod/checkpoints/{study}/{datatype}/events.parquet"
+```
+
+**Generated checkpoint files** (using production template):
+
+- `prod/checkpoints/adrc-form-events.parquet`
+- `prod/checkpoints/adrc-dicom-events.parquet`
+- `prod/checkpoints/dvcid-form-events.parquet`
+- `prod/checkpoints/leads-dicom-events.parquet`
 
 ### Optional Variables
 
-| Variable                       | Default                          | Description                           |
-| ------------------------------ | -------------------------------- | ------------------------------------- |
-| `checkpoint_key`               | `"checkpoints/events.parquet"`   | S3 key for checkpoint file            |
-| `environment`                  | `"dev"`                          | Environment name (dev/staging/prod)   |
-| `log_level`                    | `"INFO"`                         | Lambda logging level                  |
-| `lambda_timeout`               | `900`                            | Lambda timeout in seconds (15 min)    |
-| `lambda_memory_size`           | `3008`                           | Lambda memory in MB (3GB)             |
-| `log_retention_days`           | `30`                             | CloudWatch log retention              |
-| `reuse_existing_layers`        | `true`                           | Reuse existing layers if available    |
-| `use_external_layer_arns`      | `false`                          | Use external layer ARNs               |
-| `force_layer_update`           | `false`                          | Force layer updates                   |
-| `external_layer_arns`          | `[]`                             | List of external layer ARNs           |
-| `alarm_sns_topic_arn`          | `""`                             | SNS topic for alarms (optional)       |
-| `manage_source_bucket_lifecycle` | `false`                        | Manage S3 lifecycle policy            |
-| `enable_event_log_archival`    | `true`                           | Enable archival to Glacier            |
-| `days_until_glacier_transition` | `90`                            | Days before Glacier transition        |
-| `days_until_deep_archive_transition` | `365`                      | Days before Deep Archive (0=disable)  |
-| `days_until_expiration`        | `0`                              | Days before deletion (0=never)        |
+| Variable                       | Default                                          | Description                           |
+| ------------------------------ | ------------------------------------------------ | ------------------------------------- |
+| `environment`                  | `"dev"`                                          | Environment name (dev/staging/prod)   |
+| `log_level`                    | `"INFO"`                                         | Lambda logging level                  |
+| `lambda_timeout`               | `900`                                            | Lambda timeout in seconds (15 min)    |
+| `lambda_memory_size`           | `3008`                                           | Lambda memory in MB (3GB)             |
+| `log_retention_days`           | `30`                                             | CloudWatch log retention              |
+| `reuse_existing_layers`        | `true`                                           | Reuse existing layers if available    |
+| `use_external_layer_arns`      | `false`                                          | Use external layer ARNs               |
+| `force_layer_update`           | `false`                                          | Force layer updates                   |
+| `external_layer_arns`          | `[]`                                             | List of external layer ARNs           |
+| `alarm_sns_topic_arn`          | `""`                                             | SNS topic for alarms (optional)       |
+| `manage_source_bucket_lifecycle` | `false`                                        | Manage S3 lifecycle policy            |
+| `enable_event_log_archival`    | `true`                                           | Enable archival to Glacier            |
+| `days_until_glacier_transition` | `90`                                            | Days before Glacier transition        |
+| `days_until_deep_archive_transition` | `365`                                      | Days before Deep Archive (0=disable)  |
+| `days_until_expiration`        | `0`                                              | Days before deletion (0=never)        |
 
 ### S3 Lifecycle Management
 

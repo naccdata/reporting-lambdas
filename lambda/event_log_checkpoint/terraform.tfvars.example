@@ -2,13 +2,13 @@
 # Copy this file to terraform.tfvars and customize the values
 
 # Required: S3 buckets
-source_bucket     = "your-event-logs-bucket"
-checkpoint_bucket = "your-checkpoint-bucket"
+source_bucket     = "submission-events"
+checkpoint_bucket = "submission-events"
 
 # Optional: Checkpoint configuration
-checkpoint_key = "checkpoints/events.parquet"
-environment    = "dev"
-log_level      = "INFO"
+checkpoint_key_template = "prod/checkpoints/{study}-{datatype}-events.parquet"  # Template with {study} and {datatype} placeholders
+environment             = "prod"
+log_level               = "INFO"
 
 # Optional: Layer management (choose one strategy)
 
