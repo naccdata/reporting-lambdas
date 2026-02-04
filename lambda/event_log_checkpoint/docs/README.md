@@ -19,7 +19,10 @@ This directory contains comprehensive documentation for the Event Log Checkpoint
 ### Infrastructure & Deployment
 
 - **[TERRAFORM.md](TERRAFORM.md)** - Terraform infrastructure documentation and deployment guide
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Step-by-step deployment procedures and workflows
 - **[ENVIRONMENTS.md](ENVIRONMENTS.md)** - Environment-specific configuration (dev, staging, production)
+- **[VERSIONING.md](VERSIONING.md)** - Semantic versioning strategy and release process
+- **[EVENT-LOG-ARCHIVAL.md](EVENT-LOG-ARCHIVAL.md)** - S3 lifecycle policies for event log management
 
 ### Operations
 
@@ -37,7 +40,9 @@ This directory contains comprehensive documentation for the Event Log Checkpoint
 
 1. Review [TERRAFORM.md](TERRAFORM.md) for infrastructure setup
 2. Check [ENVIRONMENTS.md](ENVIRONMENTS.md) for environment configuration
-3. Review [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md) for deployment checklist
+3. Read [VERSIONING.md](VERSIONING.md) for release process
+4. Review [DEPLOYMENT.md](DEPLOYMENT.md) for deployment procedures
+5. Check [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md) for deployment checklist
 
 ### For Data Analysts
 

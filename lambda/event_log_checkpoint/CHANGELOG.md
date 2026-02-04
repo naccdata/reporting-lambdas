@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes.
 
-## [2026-02-04] - Event Filtering, Grouping, and Nested Directory Structure
+## [1.0.0] - 2026-02-04
 
 ### Added
 
@@ -85,27 +85,27 @@ No unreleased changes.
 
 ## Version Mapping
 
-This section maps AWS Lambda versions to changelog entries for each environment.
+This section maps semantic versions (git tags) to AWS Lambda versions for each environment.
 
 ### Production Environment
 
-- **Lambda Version**: 2
-- **Alias**: `prod`
+- **Semantic Version**: v1.0.0
+- **Git Tag**: v1.0.0
+- **AWS Lambda Version**: 2
 - **Deployed**: 2026-02-04
-- **Changelog Version**: [2026-02-04] - Event Filtering, Grouping, and Nested Directory Structure
 
 ### Staging Environment
 
-- **Lambda Version**: Not yet deployed
-- **Alias**: `staging`
-- **Changelog Version**: N/A
+- **Semantic Version**: Not yet deployed
+- **Git Tag**: N/A
+- **AWS Lambda Version**: N/A
 
 ### Development Environment
 
-- **Lambda Version**: 14
-- **Alias**: `dev`
+- **Semantic Version**: v1.0.0
+- **Git Tag**: v1.0.0
+- **AWS Lambda Version**: 14
 - **Deployed**: 2026-02-04
-- **Changelog Version**: [2026-02-04] - Event Filtering, Grouping, and Nested Directory Structure
 
 ---
 
@@ -116,31 +116,93 @@ This section maps AWS Lambda versions to changelog entries for each environment.
 1. Add changes to the `[Unreleased]` section as you work
 2. Use the categories: Added, Changed, Deprecated, Removed, Fixed, Security
 3. Write clear, user-focused descriptions
+4. Follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format
 
-### For Deployments
+### For Releases
 
-1. When deploying to an environment, note the AWS Lambda version number
-2. Update the "Version Mapping" section with the Lambda version and date
-3. Move unreleased changes to a new version section if this is a significant release
+When ready to create a new release:
 
-### Example Entry Format
+1. **Determine Version Number** using [Semantic Versioning](https://semver.org/):
+   - **MAJOR** (x.0.0): Breaking changes (incompatible API changes)
+   - **MINOR** (0.x.0): New features (backward compatible)
+   - **PATCH** (0.0.x): Bug fixes (backward compatible)
 
+2. **Update CHANGELOG.md**:
+   - Move items from `[Unreleased]` to a new version section
+   - Add version number and date: `## [1.1.0] - 2026-02-15`
+   - Keep `[Unreleased]` section empty for future changes
+
+3. **Create Git Tag**:
+   ```bash
+   git tag -a v1.1.0 -m "Release v1.1.0: Description of changes"
+   git push origin v1.1.0
+   ```
+
+4. **Deploy to Environments**:
+   ```bash
+   # Deploy to dev first
+   cd lambda/event_log_checkpoint
+   terraform workspace select dev
+   terraform apply -var-file=terraform.dev.tfvars
+   
+   # Then staging
+   terraform workspace select staging
+   terraform apply -var-file=terraform.staging.tfvars
+   
+   # Finally production
+   terraform workspace select prod
+   terraform apply -var-file=terraform.prod.tfvars
+   ```
+
+5. **Update Version Mapping**:
+   - Note the AWS Lambda version number from deployment output
+   - Update the "Version Mapping" section with:
+     - Semantic version (e.g., v1.1.0)
+     - Git tag (e.g., v1.1.0)
+     - AWS Lambda version (from deployment)
+     - Deployment date
+
+### Semantic Versioning Examples
+
+**MAJOR version (1.0.0 → 2.0.0)**: Breaking changes
 ```markdown
-## [Unreleased]
+## [2.0.0] - 2026-03-01
+
+### Changed
+- **BREAKING**: Checkpoint key template now requires {environment} placeholder
+- **BREAKING**: Removed support for flat directory structure
+```
+
+**MINOR version (1.0.0 → 1.1.0)**: New features
+```markdown
+## [1.1.0] - 2026-02-15
 
 ### Added
-- New feature description
+- Support for custom event filters via configuration
+- New CloudWatch metrics for checkpoint size
+```
+
+**PATCH version (1.0.0 → 1.0.1)**: Bug fixes
+```markdown
+## [1.0.1] - 2026-02-10
 
 ### Fixed
-- Bug fix description
+- Timezone handling for events crossing daylight saving time
+- Memory leak in parquet file processing
+```
 
-## Deployment - 2024-01-28
+### Version Rollback
 
-### Production
-- Lambda Version: 5
-- Changes: Initial production deployment
+To rollback to a previous version:
 
-### Staging  
-- Lambda Version: 8
-- Changes: Testing new timezone handling
+```bash
+# Checkout the version tag
+git checkout v1.0.0
+
+# Deploy to the environment
+cd lambda/event_log_checkpoint
+terraform workspace select dev
+terraform apply -var-file=terraform.dev.tfvars
+
+# Update Version Mapping to reflect rollback
 ```
