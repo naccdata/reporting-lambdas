@@ -26,7 +26,7 @@ This implementation plan breaks down the checkpoint filtering and grouping featu
     - _Requirements: 1.1, 1.2, 1.3, 1.4_
 
 - [ ] 2. Implement EventGrouper component
-  - [ ] 2.1 Create event_grouper.py module with EventGrouper class
+  - [x] 2.1 Create event_grouper.py module with EventGrouper class
     - Define StudyDatatypeKey type alias
     - Implement `group_by_study_datatype()` static method
     - Use dictionary with (study, datatype) tuple keys
@@ -47,8 +47,8 @@ This implementation plan breaks down the checkpoint filtering and grouping featu
     - Test all events with same study-datatype
     - _Requirements: 2.1_
 
-- [ ] 3. Implement CheckpointKeyTemplate component
-  - [ ] 3.1 Create checkpoint_key_template.py module with CheckpointKeyTemplate class
+- [x] 3. Implement CheckpointKeyTemplate component
+  - [x] 3.1 Create checkpoint_key_template.py module with CheckpointKeyTemplate class
     - Implement `__init__()` with template validation
     - Implement `validate()` method to check for required placeholders
     - Implement `generate_key()` method for template expansion
@@ -78,11 +78,11 @@ This implementation plan breaks down the checkpoint filtering and grouping featu
     - Test empty template
     - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 4. Checkpoint - Ensure all tests pass
+- [x] 4. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. Implement configuration model
-  - [ ] 5.1 Create config.py module with LambdaConfig class
+  - [x] 5.1 Create config.py module with LambdaConfig class
     - Define Pydantic model with bucket, prefix, checkpoint_key_template fields
     - Implement `validate_template()` method
     - Add field descriptions and defaults
@@ -95,8 +95,8 @@ This implementation plan breaks down the checkpoint filtering and grouping featu
     - Test default values
     - _Requirements: 4.1, 4.3, 4.4_
 
-- [ ] 6. Update Lambda handler for filtering and grouping
-  - [ ] 6.1 Modify lambda_handler function in lambda_function.py
+- [x] 6. Update Lambda handler for filtering and grouping
+  - [x] 6.1 Modify lambda_handler function in lambda_function.py
     - Load configuration from environment variables
     - Validate configuration using LambdaConfig
     - Retrieve events using S3EventRetriever
@@ -145,17 +145,17 @@ This implementation plan breaks down the checkpoint filtering and grouping featu
     - Verify all events processed (no timestamp filtering)
     - Verify checkpoint created with all events
 
-- [ ] 8. Add structured logging
-  - [ ] 8.1 Add logging to EventFilter
+- [x] 8. Add structured logging
+  - [x] 8.1 Add logging to EventFilter
     - Log filtered event count with structured context
     - Use Lambda Powertools Logger
     - _Requirements: 5.1_
   
-  - [ ] 8.2 Add logging to EventGrouper
+  - [x] 8.2 Add logging to EventGrouper
     - Log group count and events per group with structured context
     - _Requirements: 5.2_
   
-  - [ ] 8.3 Add logging to Lambda handler
+  - [x] 8.3 Add logging to Lambda handler
     - Log checkpoint save operations with study, datatype, key, count
     - Log checkpoint save failures with error details
     - Log processing summary with totals and group details
@@ -168,7 +168,7 @@ This implementation plan breaks down the checkpoint filtering and grouping featu
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
 - [ ] 9. Add CloudWatch metrics
-  - [ ] 9.1 Add metrics to Lambda handler
+  - [x] 9.1 Add metrics to Lambda handler
     - Emit EventsFiltered metric with count
     - Emit EventsProcessedByStudyDatatype with dimensions
     - Emit CheckpointsSaved metric with count
@@ -183,20 +183,20 @@ This implementation plan breaks down the checkpoint filtering and grouping featu
     - Use metrics capture fixtures
     - _Requirements: 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 10. Update environment configuration
-  - [ ] 10.1 Update Terraform configuration
+- [x] 10. Update environment configuration
+  - [x] 10.1 Update Terraform configuration
     - Add CHECKPOINT_KEY_TEMPLATE environment variable
     - Set default value: "checkpoints/{study}-{datatype}-events.parquet"
     - Update Lambda function configuration
     - _Requirements: 4.1, 4.2_
   
-  - [ ] 10.2 Update documentation
+  - [x] 10.2 Update documentation
     - Document new environment variable in README
     - Document checkpoint file naming convention
     - Document filtering behavior
     - _Requirements: 1.1, 2.1, 4.1_
 
-- [ ] 11. Final checkpoint - Ensure all tests pass
+- [x] 11. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
