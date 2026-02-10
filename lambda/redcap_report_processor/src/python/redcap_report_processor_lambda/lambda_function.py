@@ -13,7 +13,7 @@ from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from pydantic import ValidationError
 
-from .models import REDCapProcessingResult, REDCapReportInputEvent
+from .models import REDCapProcessingResult, REDCapProcessingInputEvent
 from .reporting_processor import process_data
 
 # Initialize AWS Lambda Powertools
@@ -50,7 +50,7 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, A
     """
     try:
         # Parse and validate input event
-        parsed_event = parse_input_event(event)
+        parsed_event = parse_input_event(event, context)
 
         # Process business logic
         result = process_data(parsed_event)
@@ -75,13 +75,13 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, A
         logger.error(
             "Processing failed", extra={"error": str(e), "error_type": type(e).__name__}
         )
-        return create_error_response(500, "Internal processing error")
+        return create_error_response(500, "Internal processing error", str(e))
 
 
 @tracer.capture_method
 def parse_input_event(
     event: Dict[str, Any], context: LambdaContext
-) -> REDCapReportInputEvent:
+) -> REDCapProcessingInputEvent:
     """Parse and validate the input event.
 
     Args:
@@ -89,17 +89,20 @@ def parse_input_event(
         context: Lambda context object
 
     Returns:
-        Validated REDCapReportInputEvent object
+        Validated REDCapProcessingInputEvent object
 
     Raises:
         ValidationError: If event format is invalid
     """
     # Parse event parameters
-    parameter_path = (event.get("parameter_path"),)
-    report_group = (event.get("report_group"),)
-    output_prefix = (event.get("output_prefix", "nacc-reporting/redcap"),)
+    parameter_path = event.get("parameter_path")
+    report_group = event.get("report_group")
+    output_prefix = event.get("output_prefix", "nacc-reporting/redcap")
+    region = event.get("region", "us-weset-2")
     environment = event.get("environment", "prod")
     log_level = event.get("log_level", "INFO")
+
+    logger.setLevel(level=log_level.upper())
 
     # Log invocation parameters using Lambda Powertools Logger (Requirement 11.1)
     logger.info(
@@ -109,6 +112,7 @@ def parse_input_event(
                 "parameter_path": parameter_path,
                 "report_group": report_group,
                 "output_prefix": output_prefix,
+                "region": region,
                 "environment": environment,
                 "log_level": log_level,
             },
@@ -118,13 +122,12 @@ def parse_input_event(
         },
     )
 
-    logger.basicConfig(level=log_level)
-
-    return REDCapReportInputEvent(
+    return REDCapProcessingInputEvent(
         parameter_path=parameter_path,
         report_group=report_group,
         output_prefix=output_prefix,
         environment=environment,
+        region=region,
     )
 
 

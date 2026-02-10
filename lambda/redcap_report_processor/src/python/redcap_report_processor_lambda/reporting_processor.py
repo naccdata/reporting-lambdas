@@ -9,11 +9,11 @@ import polars as pl
 from aws_helpers.s3_manager import S3Manager
 from aws_lambda_powertools import Logger
 from pydantic import TypeAdapter
-from redcap_api.recap_connection import REDCapConnection
+from redcap_api.redcap_connection import REDCapConnection
 from redcap_api.redcap_parameter_store import REDCapReportParameters
 from redcap_api.redcap_project import REDCapProject
 
-from .models import REDCapProcessingResult, REDCapReportInputEvent
+from .models import REDCapProcessingResult, REDCapProcessingInputEvent
 
 logger = Logger()
 
@@ -34,7 +34,7 @@ def _get_redcap_project(parameter_path: str) -> REDCapProject:
 
 
 def _build_output_path(
-    event: REDCapReportInputEvent, pid: str, timestamp: str
+    event: REDCapProcessingInputEvent, pid: str, timestamp: str
 ) -> Tuple[str, str]:
     """Build output path.
 
@@ -44,11 +44,13 @@ def _build_output_path(
         f"{event.output_prefix}/{event.environment}/{event.report_group}/"
         + f"{pid}/{timestamp}"
     )
+    full_path = full_path.replace("s3://", "")
     parts = full_path.split("/")
+
     return parts[0], "/".join(parts[1:])
 
 
-def process_data(event: REDCapReportInputEvent) -> REDCapProcessingResult:
+def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
     """Main reporting processor for processing data.
 
     This is a template implementation that should be customized
@@ -82,7 +84,7 @@ def process_data(event: REDCapReportInputEvent) -> REDCapProcessingResult:
         )
 
         # set up S3 manager
-        s3_manager = S3Manager(bucket)
+        s3_manager = S3Manager(bucket, region=event.region)
 
         # export records
         record = redcap_project.export_records(exp_format="csv")
@@ -100,7 +102,7 @@ def process_data(event: REDCapReportInputEvent) -> REDCapProcessingResult:
             start_time=start_time,
             end_time=end_time,
             num_records=df_lazy.select(pl.count()).collect()[0, 0],
-            output_location=f"{bucket}/{prefix}/{filename}",
+            output_location=f"s3://{bucket}/{prefix}/{filename}",
         )
 
     except Exception as e:

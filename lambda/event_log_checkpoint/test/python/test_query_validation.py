@@ -27,6 +27,11 @@ from checkpoint_lambda.query_validation import (
     validate_parquet_schema_supports_filtering,
 )
 from polars import DataFrame
+from testing.moto_fixtures import (
+    moto_server,
+    s3_client,
+    setup_s3_environment
+)
 
 # Test data constants to prevent E501 line length errors
 CENTER_ALPHA = "alpha"

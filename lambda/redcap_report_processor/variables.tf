@@ -33,6 +33,17 @@ variable "output_prefix" {
   }
 }
 
+variable "region" {
+  description = "AWS S3 region"
+  type        = string
+  default     = "us-west-2"
+
+  validation {
+    condition     = length(var.region) > 0
+    error_message = "Region cannot be empty."
+  }
+}
+
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string

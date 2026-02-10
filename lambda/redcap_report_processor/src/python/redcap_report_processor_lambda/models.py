@@ -11,7 +11,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
-class REDCapReportInputEvent(BaseModel):
+class REDCapProcessingInputEvent(BaseModel):
     """Model for REDCap report processor input events.
 
     Full output URI ends up being
@@ -30,13 +30,15 @@ class REDCapReportInputEvent(BaseModel):
         description="The output prefix. Defaults to nacc-reporting/redcap",
     )
 
-    environment: Literal["dev", "staging", "prod"] = Field(
-        default="prod", description="Environment name (dev, staging, prod)"
+    environment: Literal["sandbox", "prod"] = Field(
+        default="prod", description="Environment name (sandbox, prod)"
     )
 
-    @field_validator("parameter_path", "output_prefix", mode="before")
+    region: str = Field(default="us-west-2", description="AWS S3 region")
+
+    @field_validator("parameter_path", "output_prefix", mode="after")
     @classmethod
-    def strip_slashes(self, value: str) -> str:
+    def strip_slashes(cls, value: str) -> str:
         return value.rstrip("/")
 
 

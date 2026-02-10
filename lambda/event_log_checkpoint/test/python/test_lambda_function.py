@@ -13,6 +13,11 @@ from unittest.mock import Mock
 
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from checkpoint_lambda.lambda_function import lambda_handler
+from testing.moto_fixtures import (
+    moto_server,
+    s3_client,
+    setup_s3_environment
+)
 
 
 def create_log_filename(action, timestamp, adcid, project, ptid, visit_num):

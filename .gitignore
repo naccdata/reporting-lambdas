@@ -168,3 +168,6 @@ dist
 *.tfstate
 *.tfstate.backup
 .terraform
+
+# Mac
+*.DS_Store*
