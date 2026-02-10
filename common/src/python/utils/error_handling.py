@@ -119,31 +119,6 @@ def handle_timeout_error(operation: str, request_id: str) -> Dict[str, Any]:
     }
 
 
-def handle_validation_error(error_msg: str) -> Dict[str, Any]:
-    """Handle parameter validation errors.
-    
-    Args:
-        error_msg: Error message to report
-    """
-    logger.error(error_msg)
-
-    return {
-        "statusCode": 400,
-        "error": "ValidationError",
-        "message": error_msg,
-    }
-
-
-def handle_missing_parameter_error(parameter: str) -> Dict[str, Any]:
-    """Handle missing parameter errors.
-    
-    Args:
-        parameter: Parameter that is missing
-    """
-    return handle_validation_error(
-        f"Missing required parameter: {parameter} is required")
-
-
 class ErrorCollector:
     """Utility class for collecting and managing errors during batch
     processing."""

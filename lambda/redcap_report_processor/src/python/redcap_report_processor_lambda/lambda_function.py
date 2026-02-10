@@ -13,9 +13,7 @@ from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from pydantic import ValidationError
 
-from utils import handle_missing_parameter_error
-
-from .models import InputEvent, ProcessingResult
+from .models import REDCapProcessingResult, REDCapReportInputEvent
 from .reporting_processor import process_data
 
 # Initialize AWS Lambda Powertools
@@ -50,60 +48,16 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, A
     Returns:
         Dict containing status code and response body
     """
-    # Parse event parameters
-    parameter_path = event.get("parameter_path"),
-    table_name = event.get("table_name"),
-    output_prefix = event.get("output_prefix", "nacc-reporting/redcap"),
-    environment = event.get("environment", "dev")
-    log_level = event.get("log_level", "INFO")
-
-    # Log invocation parameters using Lambda Powertools Logger (Requirement 11.1)
-    logger.info(
-        "Lambda execution started",
-        extra={
-            "invocation_parameters": {
-                "parameter_path": parameter_path,
-                "table_name": table_name,
-                "output_prefix": output_prefix,
-                "environment": environment,
-                "log_level": log_level,
-            },
-            "lambda_request_id": context.aws_request_id,
-            "function_name": context.function_name,
-            "function_version": context.function_version,
-        },
-    )
-
-    logging.basicConfig(level=log_level)
-
-    # validate required parameters
-    if not parameter_path:
-        return handle_missing_parameter_error("parameter_path")
-    if not table_name:
-        return handle_missing_parameter_error("table_name")
-    if not output_prefix:
-        return handle_missing_parameter_error("output_prefix")
-
     try:
         # Parse and validate input event
         parsed_event = parse_input_event(event)
-        logger.info(
-            "Input event parsed successfully",
-            extra={
-                "event_type": parsed_event.event_type,
-                "source": parsed_event.source,
-            },
-        )
 
         # Process business logic
         result = process_data(parsed_event)
         logger.info(
             "Data processing completed",
             extra={
-                "records_processed": result.records_processed,
-                "records_failed": result.records_failed,
-                "output_location": result.output_location,
-                "success_rate": result.success_rate,
+                "num_records": result.num_records,
             },
         )
 
@@ -125,50 +79,56 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, A
 
 
 @tracer.capture_method
-def parse_input_event(event: Dict[str, Any]) -> InputEvent:
+def parse_input_event(
+    event: Dict[str, Any], context: LambdaContext
+) -> REDCapReportInputEvent:
     """Parse and validate the input event.
 
     Args:
         event: Raw lambda event
+        context: Lambda context object
 
     Returns:
-        Validated InputEvent object
+        Validated REDCapReportInputEvent object
 
     Raises:
         ValidationError: If event format is invalid
     """
-    # Handle different event sources (EventBridge, S3, API Gateway, etc.)
-    if "source" in event and event["source"] == "aws.events":
-        # EventBridge scheduled event
-        return InputEvent(
-            event_type="scheduled",
-            source="eventbridge",
-            data=event.get("detail", {}),
-            metadata={
-                "rule_name": event.get("detail-type", "unknown"),
-                "account": event.get("account"),
-                "region": event.get("region"),
+    # Parse event parameters
+    parameter_path = (event.get("parameter_path"),)
+    report_group = (event.get("report_group"),)
+    output_prefix = (event.get("output_prefix", "nacc-reporting/redcap"),)
+    environment = event.get("environment", "dev")
+    log_level = event.get("log_level", "INFO")
+
+    # Log invocation parameters using Lambda Powertools Logger (Requirement 11.1)
+    logger.info(
+        "Lambda execution started",
+        extra={
+            "invocation_parameters": {
+                "parameter_path": parameter_path,
+                "report_group": report_group,
+                "output_prefix": output_prefix,
+                "environment": environment,
+                "log_level": log_level,
             },
-        )
-    elif "Records" in event:
-        # S3 event
-        return InputEvent(
-            event_type="s3_trigger",
-            source="s3",
-            data={"records": event["Records"]},
-            metadata={"record_count": len(event["Records"])},
-        )
-    else:
-        # Direct invocation or API Gateway
-        return InputEvent(
-            event_type="direct",
-            source="api_gateway" if "httpMethod" in event else "direct",
-            data=event,
-            metadata={},
-        )
+            "lambda_request_id": context.aws_request_id,
+            "function_name": context.function_name,
+            "function_version": context.function_version,
+        },
+    )
+
+    logger.basicConfig(level=log_level)
+
+    return REDCapReportInputEvent(
+        parameter_path=parameter_path,
+        report_group=report_group,
+        output_prefix=output_prefix,
+        environment=environment,
+    )
 
 
-def create_success_response(result: ProcessingResult) -> Dict[str, Any]:
+def create_success_response(result: REDCapProcessingResult) -> Dict[str, Any]:
     """Create a standardized success response.
 
     Args:
@@ -183,11 +143,9 @@ def create_success_response(result: ProcessingResult) -> Dict[str, Any]:
         "body": json.dumps(
             {
                 "status": "success",
-                "message": "Data processing completed successfully",
+                "message": "REDCap report processing completed successfully",
                 "result": {
-                    "records_processed": result.records_processed,
-                    "records_failed": result.records_failed,
-                    "success_rate": result.success_rate,
+                    "num_records": result.num_records,
                     "output_location": result.output_location,
                     "duration_seconds": result.duration_seconds,
                 },

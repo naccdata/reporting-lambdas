@@ -11,19 +11,19 @@ variable "parameter_path" {
   }
 }
 
-variable "table_name" {
-  description = "Name of the table to store this report in; results will be stored under <output_prefix>/<table_name>/*.parquet"
+variable "report_group" {
+  description = "Name of the report group to write results under"
   type        = string
 
   validation {
     condition     = length(var.table_name) > 0
-    error_message = "Table name cannot be empty."
+    error_message = "Report group cannot be empty."
   }
 }
 
 # Optional variables with defaults
 variable "output_prefix" {
-  description = "AWS S3 prefix to write processed REDCap report to; results will be stored under <output_prefix>/<table_name>/*.parquet"
+  description = "AWS S3 prefix to write processed REDCap report to"
   type        = string
   default     = "nacc-reporting/redcap"
 
