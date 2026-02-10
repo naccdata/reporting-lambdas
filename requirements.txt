@@ -6,6 +6,7 @@ botocore-stubs
 moto[s3,xray,server]>=4.2.0  # Provides S3 and X-Ray mocking
 pydantic>=2.7.1
 polars>=0.20.0
+pyarrow>=23.0.0
 pytest>=7.2.0
 hypothesis>=6.0.0
 redcap_api@ https://github.com/naccdata/redcap-api/releases/download/v0.1.2/redcap_api-0.1.2-py3-none-any.whl

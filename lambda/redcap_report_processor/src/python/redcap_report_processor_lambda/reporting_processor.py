@@ -13,12 +13,12 @@ from redcap_api.redcap_connection import REDCapConnection
 from redcap_api.redcap_parameter_store import REDCapReportParameters
 from redcap_api.redcap_project import REDCapProject
 
-from .models import REDCapProcessingResult, REDCapProcessingInputEvent
+from .models import REDCapProcessingInputEvent, REDCapProcessingResult
 
 logger = Logger()
 
 
-def _get_redcap_project(parameter_path: str) -> REDCapProject:
+def get_redcap_project(parameter_path: str) -> REDCapProject:
     ssm_client = boto3.client("ssm")
     raw_params = ssm_client.get_parameters_by_path(
         Path=parameter_path, WithDecryption=True, Recursive=True
@@ -33,7 +33,7 @@ def _get_redcap_project(parameter_path: str) -> REDCapProject:
     return REDCapProject.create(redcap_connection)
 
 
-def _build_output_path(
+def build_output_path(
     event: REDCapProcessingInputEvent, pid: str, timestamp: str
 ) -> Tuple[str, str]:
     """Build output path.
@@ -70,15 +70,14 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
         logger.info("Starting REDCap report processor")
 
         # connect to REDCap project
-        redcap_project = _get_redcap_project(event.parameter_path)
+        redcap_project = get_redcap_project(event.parameter_path)
         logger.info(
             f"Grabbed REDCap project with pid '{redcap_project.pid}' "
             + f"and title '{redcap_project.title}'"
         )
 
-        bucket, prefix = _build_output_path(
-            output_prefix=event.output_prefix,
-            report_group=event.report_group,
+        bucket, prefix = build_output_path(
+            event=event,
             pid=redcap_project.pid,
             timestamp=timestamp,
         )

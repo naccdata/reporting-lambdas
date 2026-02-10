@@ -18,11 +18,7 @@ from checkpoint_lambda.s3_retriever import S3EventRetriever
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from pydantic import ValidationError
-from testing.moto_fixtures import (
-    moto_server,
-    s3_client,
-    setup_s3_environment
-)
+from testing.moto_fixtures import moto_server, s3_client, setup_s3_environment
 
 # Test data constants to avoid line length issues
 SUBMIT_FULL_LOG = "log-submit-20240115-100000-42-ingest-form-alpha-110001-01.json"

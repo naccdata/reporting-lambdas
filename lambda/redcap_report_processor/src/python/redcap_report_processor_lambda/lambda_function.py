@@ -13,7 +13,7 @@ from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from pydantic import ValidationError
 
-from .models import REDCapProcessingResult, REDCapProcessingInputEvent
+from .models import REDCapProcessingInputEvent, REDCapProcessingResult
 from .reporting_processor import process_data
 
 # Initialize AWS Lambda Powertools

@@ -1,39 +1,12 @@
-"""Unit tests for template lambda handler.
-
-These tests demonstrate testing patterns for Lambda functions including
-event parsing, error handling, and response formatting.
-"""
+"""Unit tests for REDCap Report Processing lambda handler."""
 
 import json
 from datetime import datetime
 from unittest.mock import Mock, patch
 
-import pytest
 from aws_lambda_powertools.utilities.typing import LambdaContext
-from template_lambda.lambda_function import (
-    create_error_response,
-    create_success_response,
-    lambda_handler,
-    parse_input_event,
-)
 from redcap_report_processor_lambda.lambda_function import lambda_handler
 from redcap_report_processor_lambda.models import REDCapProcessingResult
-from testing.moto_fixtures import (
-    moto_server,
-    s3_client,
-    setup_s3_environment
-)
-
-@pytest.fixture(scope="function")
-def valid_event():
-    return {
-        "parameter_path": "/redcap/aws/pid_00",
-        "report_group": "testing",
-        "output_prefix": "dummy-bucket",
-        "region": "us-west-2",
-        "environment": "sandbox",
-        "log_level": "INFO"
-    }
 
 
 class TestLambdaHandler:
@@ -46,14 +19,15 @@ class TestLambdaHandler:
         context.get_remaining_time_in_millis.return_value = 30000
 
         # Mock the business logic
-        with patch("redcap_report_processor_lambda.lambda_function.process_data") as mock_process:
-            output_location = f"s3://dummy-bucket/sandbox/testing/file.parquet"
+        with patch(
+            "redcap_report_processor_lambda.lambda_function.process_data"
+        ) as mock_process:
+            output_location = "s3://dummy-bucket/sandbox/testing/file.parquet"
             mock_result = REDCapProcessingResult(
                 start_time=datetime.utcnow(),
                 end_time=datetime.utcnow(),
                 num_records=100,
-                output_location=output_location
-
+                output_location=output_location,
             )
             mock_process.return_value = mock_result
 
@@ -68,7 +42,7 @@ class TestLambdaHandler:
             assert body["result"]["output_location"] == output_location
 
     def test_lambda_handler_validation_error(self):
-        """Test handling of validation errors by sending an empty event"""
+        """Test handling of validation errors by sending an empty event."""
         # Arrange
         event = {}  # Invalid event structure
         context = Mock(spec=LambdaContext)
@@ -87,9 +61,9 @@ class TestLambdaHandler:
             "2 validation errors for REDCapProcessingInputEvent",
             "Input should be a valid string",
             "parameter_path",
-            "report_group"
+            "report_group",
         ]:
-            assert text in body['details']
+            assert text in body["details"]
 
     def test_lambda_handler_processing_error(self, valid_event):
         """Test handling of processing errors."""
@@ -99,7 +73,9 @@ class TestLambdaHandler:
         context.get_remaining_time_in_millis.return_value = 30000
 
         # Mock the business logic to raise an exception
-        with patch("redcap_report_processor_lambda.lambda_function.process_data") as mock_process:
+        with patch(
+            "redcap_report_processor_lambda.lambda_function.process_data"
+        ) as mock_process:
             mock_process.side_effect = Exception("Processing failed")
 
             # Act

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 import boto3
 import polars as pl
+import pyarrow
 from botocore.exceptions import ClientError, NoCredentialsError
 
 logger = logging.getLogger(__name__)

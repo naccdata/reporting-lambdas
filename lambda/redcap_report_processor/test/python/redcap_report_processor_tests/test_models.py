@@ -1,8 +1,4 @@
-"""Unit tests for template lambda data models.
-
-These tests demonstrate testing patterns for Pydantic models including
-validation, serialization, and property calculations.
-"""
+"""Unit tests for REDCap Report Processing lambda data models."""
 
 import json
 from datetime import datetime
@@ -25,7 +21,7 @@ class TestREDCapProcessingInputEvent:
             parameter_path="/redcap/aws/pid_00/",
             report_group="testing",
             output_prefix="local-bucket/",
-            environment="sandbox"
+            environment="sandbox",
         )
 
         # Assert; check slashes stripped on parameter path and output prefix
@@ -41,7 +37,7 @@ class TestREDCapProcessingInputEvent:
             parameter_path="/redcap/aws/pid_00/",
             report_group="testing",
             output_prefix="local-bucket/",
-            environment="sandbox"
+            environment="sandbox",
         )
 
         # Act
