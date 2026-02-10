@@ -34,13 +34,16 @@ def _get_redcap_project(parameter_path: str) -> REDCapProject:
 
 
 def _build_output_path(
-    output_prefix: str, report_group: str, pid: str, timestamp: str
+    event: REDCapReportInputEvent, pid: str, timestamp: str
 ) -> Tuple[str, str]:
     """Build output path.
 
     Returns the bucket and S3 key.
     """
-    full_path = f"{output_prefix}/{report_group}/{pid}/{timestamp}"
+    full_path = (
+        f"{event.output_prefix}/{event.environment}/{event.report_group}/"
+        + f"{pid}/{timestamp}"
+    )
     parts = full_path.split("/")
     return parts[0], "/".join(parts[1:])
 

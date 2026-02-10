@@ -15,10 +15,10 @@ class REDCapReportInputEvent(BaseModel):
     """Model for REDCap report processor input events.
 
     Full output URI ends up being
-    <output-prefix>/<report-group>/<report-pid>/<timestamp>/*.parquet
+    <output-prefix>/<environment>/<report-group>/<report-pid>/<timestamp>/*.parquet
 
     e.g.
-    nacc-reporting/redcap/clariti/123/20260209-060804/*.parquet
+    nacc-reporting/redcap/sandbox/clariti/123/20260209-060804/*.parquet
     """
 
     parameter_path: str = Field(

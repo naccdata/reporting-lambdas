@@ -98,7 +98,7 @@ def parse_input_event(
     parameter_path = (event.get("parameter_path"),)
     report_group = (event.get("report_group"),)
     output_prefix = (event.get("output_prefix", "nacc-reporting/redcap"),)
-    environment = event.get("environment", "dev")
+    environment = event.get("environment", "prod")
     log_level = event.get("log_level", "INFO")
 
     # Log invocation parameters using Lambda Powertools Logger (Requirement 11.1)
