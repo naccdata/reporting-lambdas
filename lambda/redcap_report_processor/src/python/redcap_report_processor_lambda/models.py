@@ -15,10 +15,10 @@ class REDCapProcessingInputEvent(BaseModel):
     """Model for REDCap report processor input events.
 
     Full output URI ends up being
-    <output-prefix>/<environment>/<report-group>/<report-pid>/<timestamp>/*.parquet
+    <output-prefix>/<environment>/<report-group>/<report-pid>/<timestamp>/<report-pid>.parquet
 
     e.g.
-    nacc-reporting/redcap/sandbox/clariti/123/20260209-060804/*.parquet
+    nacc-reporting/bronze-tables/redcap/sandbox/clariti/123/20260209-060804/123.parquet
     """
 
     parameter_path: str = Field(
@@ -26,12 +26,12 @@ class REDCapProcessingInputEvent(BaseModel):
     )
     report_group: str = Field(description="The report group to write results under")
     output_prefix: str = Field(
-        default="nacc-reporting/redcap",
-        description="The output prefix. Defaults to nacc-reporting/redcap",
+        default="nacc-reporting/bronze-tables/redcap",
+        description="The output prefix. Defaults to nacc-reporting/bronze-tables/redcap",
     )
 
-    environment: Literal["sandbox", "prod"] = Field(
-        default="prod", description="Environment name (sandbox, prod)"
+    environment: Literal["dev", "sandbox", "prod"] = Field(
+        default="prod", description="Environment name (sandbox, dev, prod)"
     )
 
     region: str = Field(default="us-west-2", description="AWS S3 region")

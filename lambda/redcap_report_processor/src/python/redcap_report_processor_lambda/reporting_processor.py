@@ -2,7 +2,7 @@
 
 import io
 from datetime import datetime
-from typing import Tuple
+from typing import Tuple, Optional
 
 import boto3
 import polars as pl
@@ -10,7 +10,7 @@ from aws_helpers.s3_manager import S3Manager
 from aws_lambda_powertools import Logger
 from pydantic import TypeAdapter
 from redcap_api.redcap_connection import REDCapConnection
-from redcap_api.redcap_parameter_store import REDCapReportParameters
+from redcap_api.redcap_parameter_store import REDCapParameters
 from redcap_api.redcap_project import REDCapProject
 
 from .models import REDCapProcessingInputEvent, REDCapProcessingResult
@@ -27,7 +27,7 @@ def get_redcap_project(parameter_path: str) -> REDCapProject:
     parameters = {
         x["Name"].split("/")[-1]: x["Value"] for x in raw_params["Parameters"]
     }
-    type_adapter = TypeAdapter(REDCapReportParameters)
+    type_adapter = TypeAdapter(REDCapParameters)
     redcap_params = type_adapter.validate_python(parameters)
     redcap_connection = REDCapConnection.create_from(redcap_params)
     return REDCapProject.create(redcap_connection)
@@ -50,7 +50,7 @@ def build_output_path(
     return parts[0], "/".join(parts[1:])
 
 
-def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
+def process_data(event: REDCapProcessingInputEvent) -> Optional[REDCapProcessingResult]:
     """Main reporting processor for processing data.
 
     This is a template implementation that should be customized
@@ -94,6 +94,7 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
 
         # upload parquet to S3
         filename = f"{redcap_project.pid}.parquet"
+
         s3_manager.upload_parquet(df, f"{prefix}/{filename}")
 
         end_time = datetime.utcnow()
@@ -114,9 +115,4 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
             },
         )
 
-        return REDCapProcessingResult(
-            start_time=start_time,
-            end_time=end_time,
-            num_records=0,
-            output_location=None,
-        )
+        raise e

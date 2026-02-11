@@ -97,8 +97,8 @@ def parse_input_event(
     # Parse event parameters
     parameter_path = event.get("parameter_path")
     report_group = event.get("report_group")
-    output_prefix = event.get("output_prefix", "nacc-reporting/redcap")
-    region = event.get("region", "us-weset-2")
+    output_prefix = event.get("output_prefix", "nacc-reporting/bronze-tables/redcap")
+    region = event.get("region", "us-west-2")
     environment = event.get("environment", "prod")
     log_level = event.get("log_level", "INFO")
 
