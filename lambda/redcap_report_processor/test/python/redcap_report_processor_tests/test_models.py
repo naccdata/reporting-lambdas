@@ -14,41 +14,35 @@ from redcap_report_processor_lambda.models import (
 class TestREDCapProcessingInputEvent:
     """Test cases for REDCapProcessingInputEvent model."""
 
-    def test_input_event_creation_success(self):
+    def test_input_event_creation_success(self, valid_input):
         """Test successful creation of REDCapProcessingInputEvent."""
-        # Arrange & Act
-        event = REDCapProcessingInputEvent(
-            parameter_path="/redcap/aws/pid_00/",
-            report_group="testing",
-            output_prefix="local-bucket/",
-            environment="sandbox",
-        )
+        assert valid_input.parameter_path == "/redcap/aws/pid_0"
+        assert valid_input.report_id == "123"
+        assert valid_input.s3_postfix == "testing/file.parquet"
+        assert valid_input.s3_prefix == "dummy-bucket/redcap"
+        assert valid_input.environment == "sandbox"
+        assert valid_input.mode == "overwrite"
+        assert valid_input.region == "us-west-2"
 
-        # Assert; check slashes stripped on parameter path and output prefix
-        assert event.parameter_path == "/redcap/aws/pid_00"
-        assert event.report_group == "testing"
-        assert event.output_prefix == "local-bucket"
-        assert event.environment == "sandbox"
+        # generated properties
+        assert valid_input.s3_uri == "dummy-bucket/redcap/sandbox/testing/file.parquet"
+        assert valid_input.s3_bucket == "dummy-bucket"
+        assert valid_input.s3_key == "redcap/sandbox/testing/file.parquet"
 
-    def test_input_event_serialization(self):
+    def test_input_event_serialization(self, valid_input):
         """Test InputEvent JSON serialization."""
-        # Arrange
-        event = REDCapProcessingInputEvent(
-            parameter_path="/redcap/aws/pid_00/",
-            report_group="testing",
-            output_prefix="local-bucket/",
-            environment="sandbox",
-        )
-
         # Act
-        json_str = event.model_dump_json()
+        json_str = valid_input.model_dump_json()
         parsed = json.loads(json_str)
 
         # Assert
-        assert parsed["parameter_path"] == "/redcap/aws/pid_00"
-        assert parsed["report_group"] == "testing"
-        assert parsed["output_prefix"] == "local-bucket"
+        assert parsed["parameter_path"] == "/redcap/aws/pid_0"
+        assert parsed["report_id"] == "123"
+        assert parsed["s3_postfix"] == "testing/file.parquet"
+        assert parsed["s3_prefix"] == "dummy-bucket/redcap"
         assert parsed["environment"] == "sandbox"
+        assert parsed["mode"] == "overwrite"
+        assert parsed["region"] == "us-west-2"
 
 
 class TestREDCapProcessingResult:
@@ -111,7 +105,7 @@ class TestModelValidation:
         # Check that required fields are mentioned in the error
         error_messages = str(exc_info.value)
         assert "parameter_path" in error_messages
-        assert "report_group" in error_messages
+        assert "s3_postfix" in error_messages
 
     def test_processing_result_missing_required_fields(self):
         """Test ProcessingResult validation with missing required fields."""

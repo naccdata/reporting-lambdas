@@ -1,12 +1,15 @@
-# Example Terraform variables file for Event Log Checkpoint Lambda
+# Example Terraform variables file for REDCap Report Processor Lambda
 # Copy this file to terraform.tfvars and customize the values
 
-# Required: Parameter path and output prefix
+# Required
 parameter_path = "/redcap/aws/your-redcap-report"
-table_name  = "your-redcap-report"
+s3_postfix     = "path/to/your/target/file.parquet"
+s3_prefix      = "your-bucket/some-path"
 
-# Optional: Environment and logging level
-output_prefix  = nacc-reporting/redcap
+# Optional
+report_id      = "123"
+mode           = "overwrite"
+region         = "us-west-2"
 environment    = "dev"
 log_level      = "INFO"
 

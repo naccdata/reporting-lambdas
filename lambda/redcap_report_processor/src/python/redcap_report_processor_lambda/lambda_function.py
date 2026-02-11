@@ -96,10 +96,12 @@ def parse_input_event(
     """
     # Parse event parameters
     parameter_path = event.get("parameter_path")
-    report_group = event.get("report_group")
-    output_prefix = event.get("output_prefix", "nacc-reporting/bronze-tables/redcap")
-    region = event.get("region", "us-west-2")
+    report_id = event.get("report_id", None)
+    s3_postfix = event.get("s3_postfix")
+    s3_prefix = event.get("s3_prefix", "nacc-reporting/bronze-tables/redcap")
     environment = event.get("environment", "prod")
+    mode = event.get("mode", "overwrite")
+    region = event.get("region", "us-west-2")
     log_level = event.get("log_level", "INFO")
 
     logger.setLevel(level=log_level.upper())
@@ -110,10 +112,12 @@ def parse_input_event(
         extra={
             "invocation_parameters": {
                 "parameter_path": parameter_path,
-                "report_group": report_group,
-                "output_prefix": output_prefix,
-                "region": region,
+                "report_id": report_id,
+                "s3_postfix": s3_postfix,
+                "s3_prefix": s3_prefix,
                 "environment": environment,
+                "mode": mode,
+                "region": region,
                 "log_level": log_level,
             },
             "lambda_request_id": context.aws_request_id,
@@ -123,10 +127,12 @@ def parse_input_event(
     )
 
     return REDCapProcessingInputEvent(
-        parameter_path=parameter_path,
-        report_group=report_group,
-        output_prefix=output_prefix,
+        parameter_path=parameter_path,  # type: ignore
+        report_id=report_id if report_id else None,
+        s3_postfix=s3_postfix,  # type: ignore
+        s3_prefix=s3_prefix,
         environment=environment,
+        mode=mode,
         region=region,
     )
 

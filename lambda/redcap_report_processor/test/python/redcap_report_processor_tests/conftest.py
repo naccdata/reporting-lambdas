@@ -7,11 +7,13 @@ from redcap_report_processor_lambda.models import REDCapProcessingInputEvent
 @pytest.fixture(scope="function")
 def valid_event():
     return {
-        "parameter_path": "/redcap/aws/pid_0",
-        "report_group": "testing",
-        "output_prefix": "dummy-bucket",
-        "region": "us-west-2",
+        "parameter_path": "/redcap/aws/pid_0/",
+        "report_id": "123",
+        "s3_postfix": "testing/file.parquet",
+        "s3_prefix": "dummy-bucket/redcap/",
         "environment": "sandbox",
+        "mode": "overwrite",
+        "region": "us-west-2",
         "log_level": "INFO",
     }
 
@@ -20,8 +22,10 @@ def valid_event():
 def valid_input(valid_event):
     return REDCapProcessingInputEvent(
         parameter_path=valid_event["parameter_path"],
-        report_group=valid_event["report_group"],
-        output_prefix=valid_event["output_prefix"],
+        report_id=valid_event["report_id"],
+        s3_postfix=valid_event["s3_postfix"],
+        s3_prefix=valid_event["s3_prefix"],
         environment=valid_event["environment"],
+        mode=valid_event["mode"],
         region=valid_event["region"],
     )

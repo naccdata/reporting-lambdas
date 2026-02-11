@@ -11,25 +11,42 @@ variable "parameter_path" {
   }
 }
 
-variable "report_group" {
-  description = "Name of the report group to write results under"
+variable "s3_postfix" {
+  description = "S3 postfix to write to; must contain parquet filename"
   type        = string
 
   validation {
-    condition     = length(var.table_name) > 0
-    error_message = "Report group cannot be empty."
+    condition     = length(var.s3_postfix) > 0
+    error_message = "S3 postfix cannot be empty."
   }
 }
 
-# Optional variables with defaults
-variable "output_prefix" {
-  description = "AWS S3 prefix to write processed REDCap report to"
+variable "report_id" {
+  description = "The report ID to pull; if not provided, pulls all records from the project"
   type        = string
-  default     = "nacc-reporting/redcap"
+}
+
+# Optional variables with defaults
+
+variable "s3_prefix" {
+  description = "AWS S3 prefix to write to"
+  type        = string
+  default     = "nacc-reporting"
 
   validation {
-    condition     = length(var.output_prefix) > 0
-    error_message = "Output prefix cannot be empty."
+    condition     = length(var.s3_prefix) > 0
+    error_message = "S3 prefix cannot be empty."
+  }
+}
+
+variable "mode" {
+  description = "If writing to an existing file, whether to overwrite or append"
+  type        = string
+  default     = "overwrite"
+
+  validation {
+    condition     = contains(["overwrite", "append"], var.environment)
+    error_message = "Mode must be one of: overwrite, append."
   }
 }
 

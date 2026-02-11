@@ -22,7 +22,7 @@ class TestLambdaHandler:
         with patch(
             "redcap_report_processor_lambda.lambda_function.process_data"
         ) as mock_process:
-            output_location = "s3://dummy-bucket/sandbox/testing/file.parquet"
+            output_location = "s3://dummy-bucket/redcap/sandbox/testing/file.parquet"
             mock_result = REDCapProcessingResult(
                 start_time=datetime.utcnow(),
                 end_time=datetime.utcnow(),
@@ -61,7 +61,7 @@ class TestLambdaHandler:
             "2 validation errors for REDCapProcessingInputEvent",
             "Input should be a valid string",
             "parameter_path",
-            "report_group",
+            "s3_postfix",
         ]:
             assert text in body["details"]
 

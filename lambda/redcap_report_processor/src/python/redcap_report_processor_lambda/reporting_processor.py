@@ -18,7 +18,18 @@ from .models import REDCapProcessingInputEvent, REDCapProcessingResult
 logger = Logger()
 
 
-def get_redcap_project(parameter_path: str) -> REDCapProject:
+def get_redcap_records(parameter_path: str, report_id: Optional[str] = None) -> str:
+    """Get REDCap records as a CSV string.
+
+    If a report ID is provided, pulls records from the report, else
+    pulls all records from the project.
+
+    Args:
+        parameter_path: The parameter path to get REDCAP url/token from
+        report_id: Optional, the report to grab
+    Returns:
+        CSV string of all records
+    """
     ssm_client = boto3.client("ssm")
     raw_params = ssm_client.get_parameters_by_path(
         Path=parameter_path, WithDecryption=True, Recursive=True
@@ -27,30 +38,19 @@ def get_redcap_project(parameter_path: str) -> REDCapProject:
     parameters = {
         x["Name"].split("/")[-1]: x["Value"] for x in raw_params["Parameters"]
     }
+
     type_adapter = TypeAdapter(REDCapParameters)
     redcap_params = type_adapter.validate_python(parameters)
     redcap_connection = REDCapConnection.create_from(redcap_params)
-    return REDCapProject.create(redcap_connection)
+    redcap_project = REDCapProject.create(redcap_connection)
+
+    if not report_id:
+        return redcap_project.export_records(exp_format="csv")
+
+    return redcap_project.export_report(report_id, exp_format="csv")
 
 
-def build_output_path(
-    event: REDCapProcessingInputEvent, pid: str, timestamp: str
-) -> Tuple[str, str]:
-    """Build output path.
-
-    Returns the bucket and S3 key.
-    """
-    full_path = (
-        f"{event.output_prefix}/{event.environment}/{event.report_group}/"
-        + f"{pid}/{timestamp}"
-    )
-    full_path = full_path.replace("s3://", "")
-    parts = full_path.split("/")
-
-    return parts[0], "/".join(parts[1:])
-
-
-def process_data(event: REDCapProcessingInputEvent) -> Optional[REDCapProcessingResult]:
+def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
     """Main reporting processor for processing data.
 
     This is a template implementation that should be customized
@@ -64,45 +64,40 @@ def process_data(event: REDCapProcessingInputEvent) -> Optional[REDCapProcessing
     """
     start_time = datetime.utcnow()
     timestamp = start_time.strftime("%Y%m%d-%H%M%S")
-    bucket, prefix = None, None
 
     try:
         logger.info("Starting REDCap report processor")
 
-        # connect to REDCap project
-        redcap_project = get_redcap_project(event.parameter_path)
-        logger.info(
-            f"Grabbed REDCap project with pid '{redcap_project.pid}' "
-            + f"and title '{redcap_project.title}'"
-        )
-
-        bucket, prefix = build_output_path(
-            event=event,
-            pid=redcap_project.pid,
-            timestamp=timestamp,
-        )
-
         # set up S3 manager
-        s3_manager = S3Manager(bucket, region=event.region)
+        s3_manager = S3Manager(event.s3_bucket, region=event.region)
 
-        # export records
-        record = redcap_project.export_records(exp_format="csv")
+        # if appending, pull down existing file if it exists
+        existing_df = None
+        if event.mode == "append" and s3_manager.object_exists(event.s3_key):
+            logger.info(
+                "Mode is `appending` and existing parquet detected, "
+                + "grabbing existing parquet"
+            )
+            existing_df = s3_manager.download_parquet_object(event.s3_key)
 
-        # write to parquet
-        df_lazy = pl.scan_csv(io.StringIO(record))
+        # get records and write to parquet
+        records = get_redcap_records(event.parameter_path, event.report_id)
+        df_lazy = pl.scan_csv(io.StringIO(records))
         df = df_lazy.collect()
 
-        # upload parquet to S3
-        filename = f"{redcap_project.pid}.parquet"
+        if existing_df is not None:
+            logger.info("Mode is `appending`, appending new data to existing parquet")
+            df = pl.concat([existing_df, df], how="vertical")
 
-        s3_manager.upload_parquet(df, f"{prefix}/{filename}")
+        # upload parquet to S3
+        s3_manager.upload_parquet(df, event.s3_key)
 
         end_time = datetime.utcnow()
         return REDCapProcessingResult(
             start_time=start_time,
             end_time=end_time,
             num_records=df_lazy.select(pl.count()).collect()[0, 0],
-            output_location=f"s3://{bucket}/{prefix}/{filename}",
+            output_location=f"s3://{event.s3_uri}",
         )
 
     except Exception as e:

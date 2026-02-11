@@ -39,30 +39,29 @@ class MockREDCapProject:
 
         return output.getvalue()
 
+    def export_report(self, report_id: str, exp_format: str = "csv") -> str:
+        """Turn records into CSV string."""
+        return self.export_records(exp_format)
 
-class TestReportingProccessor:
+
+class TestReportingProcessor:
     """Test cases for main data processing logic."""
 
     def test_process_redcap_report(
         self, valid_input, s3_client, setup_s3_environment
     ) -> None:
         """Test processing of scheduled events."""
-        s3_client.create_bucket(Bucket=valid_input.output_prefix)
+        s3_client.create_bucket(Bucket=valid_input.s3_bucket)
 
-        records = [
-            {"ptid": "1234", "dummy": "dummy"},
-            {"ptid": "4567", "dummy": "dummy2"},
-        ]
-        redcap_project = MockREDCapProject(records=records)
+        records = "id,dummy\n1234,value\n4567,value2"
 
         with patch(
-            "redcap_report_processor_lambda.reporting_processor.get_redcap_project"
+            "redcap_report_processor_lambda.reporting_processor.get_redcap_records"
         ) as mock_process:
-            mock_process.return_value = redcap_project
+            mock_process.return_value = records
             response = process_data(valid_input)
 
             assert response.num_records == 2
-            assert response.output_location.startswith(
-                "s3://dummy-bucket/sandbox/testing/0/"
+            assert response.output_location.startswith(  # type: ignore
+                "s3://dummy-bucket/redcap/sandbox/testing/file.parquet"
             )
-            assert response.output_location.endswith("/0.parquet")
