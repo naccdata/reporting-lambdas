@@ -2,6 +2,7 @@
 
 import pytest
 from redcap_report_processor_lambda.models import REDCapProcessingInputEvent
+from testing.moto_fixtures import *  # noqa: F403
 
 
 @pytest.fixture(scope="function")

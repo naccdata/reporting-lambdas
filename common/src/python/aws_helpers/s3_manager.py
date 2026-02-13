@@ -169,7 +169,7 @@ class S3Manager:
             tmp_path = tmp_file.name
 
         try:
-            df.write_parquet(tmp_path, compression=compression, use_pyarrow=True)
+            df.write_parquet(tmp_path, compression=compression)
 
             # Upload to S3
             self.s3_client.upload_file(tmp_path, self.bucket_name, key)
