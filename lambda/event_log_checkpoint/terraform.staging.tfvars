@@ -1,0 +1,49 @@
+# Staging Environment Configuration
+# Event Log Checkpoint Lambda
+
+# Environment
+environment = "staging"
+log_level   = "INFO"
+
+# S3 Configuration
+source_bucket           = "submission-events"
+checkpoint_bucket       = "submission-events" # Using same bucket for checkpoints
+checkpoint_key_template = "staging/checkpoints/{study}/{datatype}/events.parquet"
+
+# Lambda Configuration
+lambda_timeout     = 900  # 15 minutes
+lambda_memory_size = 3008 # 3GB
+log_retention_days = 30   # Standard retention for staging
+
+# Layer Management
+# IMPORTANT: For first deployment, set reuse_existing_layers = false
+# After first deployment, change to true for faster deployments
+reuse_existing_layers   = false  # Set to true after first deployment
+use_external_layer_arns = false
+force_layer_update      = false
+
+# Monitoring
+# Add SNS topic ARN for staging alerts
+# alarm_sns_topic_arn = "arn:aws:sns:us-east-1:123456789012:event-log-checkpoint-staging-alerts"
+alarm_sns_topic_arn = ""
+
+# Event Log Filtering
+# Optional: filter to specific date range
+# event_log_prefix = "logs/"
+
+# S3 Lifecycle Management
+# Staging: Archive to Glacier, keep indefinitely
+manage_source_bucket_lifecycle     = true
+enable_event_log_archival          = true
+days_until_glacier_transition      = 90 # Archive after 90 days
+days_until_deep_archive_transition = 0  # Skip Deep Archive for staging
+days_until_expiration              = 0  # Keep forever
+
+# Tags
+additional_tags = {
+  Environment = "staging"
+  Owner       = "data-engineering"
+  CostCenter  = "analytics"
+  Application = "event-log-processing"
+  ManagedBy   = "terraform"
+}

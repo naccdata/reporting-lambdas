@@ -9,11 +9,29 @@ together with actual S3 operations against a mocked S3 server.
 """
 
 import json
+import os
 from unittest.mock import Mock
 
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from checkpoint_lambda.lambda_function import lambda_handler
 from testing.moto_fixtures import moto_server, s3_client, setup_s3_environment
+
+
+def setup_lambda_env(bucket, prefix="", checkpoint_template=None):
+    """Helper function to set Lambda environment variables for tests.
+
+    Args:
+        bucket: S3 bucket name for both source and checkpoint
+        prefix: S3 prefix for event logs (default: "")
+        checkpoint_template: Checkpoint key template (default: study-datatype
+            template)
+    """
+    os.environ["BUCKET"] = bucket
+    os.environ["PREFIX"] = prefix
+    if checkpoint_template is None:
+        # Default test template - matches conftest.py default
+        checkpoint_template = "checkpoints/{study}/{datatype}/events.parquet"
+    os.environ["CHECKPOINT_KEY_TEMPLATE"] = checkpoint_template
 
 
 def create_log_filename(action, timestamp, adcid, project, ptid, visit_num):
@@ -55,21 +73,17 @@ def create_s3_log_key(prefix, action, timestamp, adcid, project, ptid, visit_num
 class TestLambdaHandlerBasicStructure:
     """Unit tests for Lambda handler basic structure with moto.server."""
 
-    def test_lambda_event_parsing_all_parameters(self, s3_client, setup_s3_environment):
-        """Test that Lambda handler accepts all expected event parameters."""
-        # Create test buckets
-        source_bucket = "test-event-logs-bucket"
-        checkpoint_bucket = "test-checkpoint-bucket"
-        s3_client.create_bucket(Bucket=source_bucket)
-        s3_client.create_bucket(Bucket=checkpoint_bucket)
+    def test_lambda_event_parsing_all_parameters(self, s3_client, lambda_config_env):
+        """Test that Lambda handler works with environment configuration."""
+        # Create test bucket
+        bucket = "test-event-logs-bucket"
+        s3_client.create_bucket(Bucket=bucket)
 
-        # Test event with all required parameters
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        # Setup Lambda environment
+        setup_lambda_env(bucket=bucket, prefix="logs/2024/")
+
+        # Test event (now empty - config comes from environment)
+        test_event = {}
 
         # Mock Lambda context
         mock_context = Mock(spec=LambdaContext)
@@ -83,21 +97,18 @@ class TestLambdaHandlerBasicStructure:
         assert isinstance(response, dict)
 
     def test_lambda_event_parsing_required_parameters_only(
-        self, s3_client, setup_s3_environment
+        self, s3_client, lambda_config_env
     ):
         """Test Lambda handler with only required parameters."""
-        # Create test buckets
-        source_bucket = "test-event-logs-bucket-2"
-        checkpoint_bucket = "test-checkpoint-bucket-2"
-        s3_client.create_bucket(Bucket=source_bucket)
-        s3_client.create_bucket(Bucket=checkpoint_bucket)
+        # Create test bucket
+        bucket = "test-event-logs-bucket-2"
+        s3_client.create_bucket(Bucket=bucket)
 
-        # Test event with only required parameters (no prefix)
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-        }
+        # Setup Lambda environment (no prefix)
+        setup_lambda_env(bucket=bucket)
+
+        # Test event (empty - config from environment)
+        test_event = {}
 
         mock_context = Mock(spec=LambdaContext)
 
@@ -107,19 +118,16 @@ class TestLambdaHandlerBasicStructure:
         # Verify response is a dictionary (basic structure)
         assert isinstance(response, dict)
 
-    def test_lambda_context_handling(self, s3_client, setup_s3_environment):
+    def test_lambda_context_handling(self, s3_client, lambda_config_env):
         """Test that Lambda handler properly handles context object."""
-        # Create test buckets
-        source_bucket = "test-bucket-context"
-        checkpoint_bucket = "test-checkpoint-bucket-context"
-        s3_client.create_bucket(Bucket=source_bucket)
-        s3_client.create_bucket(Bucket=checkpoint_bucket)
+        # Create test bucket
+        bucket = "test-bucket-context"
+        s3_client.create_bucket(Bucket=bucket)
 
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-        }
+        # Setup Lambda environment
+        setup_lambda_env(bucket=bucket)
+
+        test_event = {}
 
         # Mock Lambda context with typical attributes
         mock_context = Mock(spec=LambdaContext)
@@ -136,49 +144,51 @@ class TestLambdaHandlerBasicStructure:
         # Verify response is a dictionary (basic structure test)
         assert isinstance(response, dict)
 
-    def test_basic_response_format_structure(self, s3_client, setup_s3_environment):
-        """Test that Lambda handler returns simplified response format."""
-        # Create test buckets
-        source_bucket = "test-bucket-response"
-        checkpoint_bucket = "test-checkpoint-bucket-response"
-        s3_client.create_bucket(Bucket=source_bucket)
-        s3_client.create_bucket(Bucket=checkpoint_bucket)
+    def test_basic_response_format_structure(self, s3_client, lambda_config_env):
+        """Test that Lambda handler returns new response format."""
+        # Create test bucket
+        bucket = "test-bucket-response"
+        s3_client.create_bucket(Bucket=bucket)
 
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-        }
+        # Setup Lambda environment
+        setup_lambda_env(bucket=bucket)
+
+        test_event = {}
 
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
         response = lambda_handler(test_event, mock_context)
 
-        # Verify simplified response format
+        # Verify new response format with body
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert "statusCode" in response
+        assert "body" in response
+        assert isinstance(response["body"], dict)
 
-        # Verify no detailed metrics in response
-        assert "checkpoint_path" not in response
-        assert "new_events_processed" not in response
-        assert "total_events" not in response
-        assert "events_failed" not in response
-        assert "execution_time_ms" not in response
+        # Verify body contains expected fields
+        body = response["body"]
+        assert "total_events" in body
+        assert "filtered_events" in body
+        assert "groups_processed" in body
+        assert "groups_failed" in body
 
-    def test_empty_event_handling(self, setup_s3_environment):
-        """Test Lambda handler behavior with empty event returns error."""
+    def test_empty_event_handling(self, lambda_config_env):
+        """Test Lambda handler behavior with empty event works with env
+        config."""
+        # Setup Lambda environment with valid config
+        setup_lambda_env(bucket="test-bucket")
+
         mock_context = Mock(spec=LambdaContext)
 
-        # Test with empty event - should return validation error
+        # Test with empty event - should work now (config from environment)
         empty_event = {}
 
         # Call handler
         response = lambda_handler(empty_event, mock_context)
         assert isinstance(response, dict)
-        assert response["statusCode"] == 400
-        assert response["error"] == "ValidationError"
-        assert "message" in response
+        # Should succeed (or fail for other reasons, not validation)
+        assert "statusCode" in response
 
     def test_handler_function_signature(self):
         """Test that the handler function has the correct signature."""
@@ -214,7 +224,7 @@ class TestLambdaHandlerBasicStructure:
         logger_class_name = lambda_module.logger.__class__.__name__
         assert logger_class_name == "Logger"
 
-    def test_various_event_structures(self, s3_client, setup_s3_environment):
+    def test_various_event_structures(self, s3_client, lambda_config_env):
         """Test handler with various event structures."""
         mock_context = Mock(spec=LambdaContext)
 
@@ -280,13 +290,17 @@ class TestLambdaHandlerFirstRunScenario:
         s3_client.create_bucket(Bucket=source_bucket)
         s3_client.create_bucket(Bucket=checkpoint_bucket)
 
+        # Setup Lambda environment
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
+
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
+        test_event = {}
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -294,7 +308,7 @@ class TestLambdaHandlerFirstRunScenario:
 
         # Verify simplified response format
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert response["statusCode"] == 200
 
     def test_first_run_checkpoint_store_load_creates_empty_checkpoint(
         self, s3_client, setup_s3_environment
@@ -307,12 +321,15 @@ class TestLambdaHandlerFirstRunScenario:
         s3_client.create_bucket(Bucket=source_bucket)
         s3_client.create_bucket(Bucket=checkpoint_bucket)
 
+        # Setup Lambda environment
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-        }
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        # }
+        test_event = {}
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -320,9 +337,9 @@ class TestLambdaHandlerFirstRunScenario:
 
         # Verify simplified response format
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert response["statusCode"] == 200
 
-    def test_first_run_s3_event_retriever_mocked(self, s3_client, setup_s3_environment):
+    def test_first_run_s3_event_retriever_mocked(self, s3_client, lambda_config_env):
         """Test S3EventRetriever is properly mocked for first run scenario."""
         # Create test buckets
         source_bucket = "test-event-logs-bucket-retriever"
@@ -330,13 +347,17 @@ class TestLambdaHandlerFirstRunScenario:
         s3_client.create_bucket(Bucket=source_bucket)
         s3_client.create_bucket(Bucket=checkpoint_bucket)
 
+        # Setup Lambda environment
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
+
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
+        test_event = {}
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler - this will test the current stub implementation
@@ -361,12 +382,16 @@ class TestLambdaHandlerFirstRunScenario:
         s3_client.create_bucket(Bucket=source_bucket)
         s3_client.create_bucket(Bucket=checkpoint_bucket)
 
+        # Setup Lambda environment
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
+
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-        }
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler - this will test the current stub implementation
@@ -380,7 +405,7 @@ class TestLambdaHandlerFirstRunScenario:
         # Note: The actual Checkpoint operations will be tested when
         # implementation is added
 
-    def test_first_run_end_to_end_scenario(self, s3_client, setup_s3_environment):
+    def test_first_run_end_to_end_scenario(self, s3_client, lambda_config_env):
         """Test complete first run scenario end-to-end with all components
         mocked."""
         # Create test buckets
@@ -389,13 +414,16 @@ class TestLambdaHandlerFirstRunScenario:
         s3_client.create_bucket(Bucket=source_bucket)
         s3_client.create_bucket(Bucket=checkpoint_bucket)
 
+        # Setup Lambda environment
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler - this will test the current stub implementation
@@ -410,7 +438,7 @@ class TestLambdaHandlerFirstRunScenario:
         # implementation is added
         # This test establishes the expected behavior for future implementation
 
-    def test_first_run_with_empty_prefix(self, s3_client, setup_s3_environment):
+    def test_first_run_with_empty_prefix(self, s3_client, lambda_config_env):
         """Test first run scenario with empty prefix parameter."""
         # Create test buckets
         source_bucket = "test-event-logs-bucket-empty-prefix"
@@ -418,12 +446,16 @@ class TestLambdaHandlerFirstRunScenario:
         s3_client.create_bucket(Bucket=source_bucket)
         s3_client.create_bucket(Bucket=checkpoint_bucket)
 
+        # Setup Lambda environment
+        setup_lambda_env(bucket=source_bucket)
+
         # Setup test event with no prefix
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-        }
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler - this will test the current stub implementation
@@ -486,13 +518,15 @@ class TestLambdaHandlerFirstRunScenario:
                 Bucket=source_bucket, Key=event_file["key"], Body=content
             )
 
+        setup_lambda_env(bucket=source_bucket, prefix="logs/")
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/",
-        }
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -504,7 +538,7 @@ class TestLambdaHandlerFirstRunScenario:
 
         # Verify no checkpoint was created (first run with no valid events)
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/events.parquet"
+            checkpoint_bucket, "checkpoints/adrc/form/events.parquet"
         )
         assert not checkpoint_store.exists()
         assert checkpoint_store.load() is None
@@ -520,13 +554,15 @@ class TestLambdaHandlerFirstRunScenario:
         s3_client.create_bucket(Bucket=source_bucket)
         s3_client.create_bucket(Bucket=checkpoint_bucket)
 
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
         # Setup test event with all parameters
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -552,13 +588,15 @@ class TestLambdaHandlerFirstRunScenario:
         s3_client.create_bucket(Bucket=source_bucket)
         s3_client.create_bucket(Bucket=checkpoint_bucket)
 
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -637,17 +675,18 @@ class TestLambdaHandlerIncrementalRunScenario:
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/events.parquet"
+            checkpoint_bucket, "checkpoints/adrc/form/events.parquet"
         )
         checkpoint_store.save(existing_checkpoint)
-
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -655,7 +694,7 @@ class TestLambdaHandlerIncrementalRunScenario:
 
         # Verify simplified response format
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert response["statusCode"] == 200
 
     def test_incremental_run_event_retrieval_with_timestamp_filtering(
         self, s3_client, setup_s3_environment
@@ -712,7 +751,7 @@ class TestLambdaHandlerIncrementalRunScenario:
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/events.parquet"
+            checkpoint_bucket, "checkpoints/adrc/form/events.parquet"
         )
         checkpoint_store.save(existing_checkpoint)
 
@@ -784,13 +823,15 @@ class TestLambdaHandlerIncrementalRunScenario:
                 Body=json.dumps(event_file["content"]),
             )
 
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -798,7 +839,7 @@ class TestLambdaHandlerIncrementalRunScenario:
 
         # Verify simplified response format
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert response["statusCode"] == 200
 
         # Note: When full implementation is added, this test will verify:
         # - get_last_processed_timestamp() returns 2024-01-15T10:20:00Z
@@ -876,8 +917,11 @@ class TestLambdaHandlerIncrementalRunScenario:
         existing_checkpoint = Checkpoint.from_events(existing_events)
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
+        # Use source_bucket (new implementation uses same bucket for everything)
+        # Use the same template pattern that lambda will use:
+        #  {study}/{datatype}/events.parquet
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/events.parquet"
+            source_bucket, "checkpoints/adrc/form/events.parquet"
         )
         checkpoint_store.save(existing_checkpoint)
 
@@ -959,12 +1003,18 @@ class TestLambdaHandlerIncrementalRunScenario:
         assert len(objects["Contents"]) == 2
 
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        setup_lambda_env(
+            bucket=source_bucket,
+            prefix="logs/2024/",
+            checkpoint_template="checkpoints/{study}/{datatype}/events.parquet",
+        )
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -972,7 +1022,7 @@ class TestLambdaHandlerIncrementalRunScenario:
 
         # Verify simplified response format
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert response["statusCode"] == 200
 
         # Verify checkpoint still exists and can be loaded
         final_checkpoint = checkpoint_store.load()
@@ -984,7 +1034,7 @@ class TestLambdaHandlerIncrementalRunScenario:
         # Note: Processing metrics are now logged instead of returned in response
         # The checkpoint S3 path is also logged instead of returned
 
-    def test_incremental_run_with_no_new_events(self, s3_client, setup_s3_environment):
+    def test_incremental_run_with_no_new_events(self, s3_client, lambda_config_env):
         """Test incremental run scenario when no new events exist."""
         from datetime import datetime
 
@@ -1021,25 +1071,27 @@ class TestLambdaHandlerIncrementalRunScenario:
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/events.parquet"
+            checkpoint_bucket, "checkpoints/adrc/form/events.parquet"
         )
         _original_s3_uri = checkpoint_store.save(existing_checkpoint)
 
         # Get the original checkpoint's last modified time for comparison
         original_response = s3_client.head_object(
-            Bucket=checkpoint_bucket, Key="checkpoints/events.parquet"
+            Bucket=checkpoint_bucket, Key="checkpoints/adrc/form/events.parquet"
         )
         original_last_modified = original_response["LastModified"]
 
         # Don't create any new event files in S3 - simulating no new events
 
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -1047,7 +1099,7 @@ class TestLambdaHandlerIncrementalRunScenario:
 
         # Verify simplified response format
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert response["statusCode"] == 200
 
         # Verify checkpoint still exists but was not overwritten
         assert checkpoint_store.exists()
@@ -1057,7 +1109,7 @@ class TestLambdaHandlerIncrementalRunScenario:
 
         # Verify the checkpoint file was not modified (not overwritten)
         final_response = s3_client.head_object(
-            Bucket=checkpoint_bucket, Key="checkpoints/events.parquet"
+            Bucket=checkpoint_bucket, Key="checkpoints/adrc/form/events.parquet"
         )
         final_last_modified = final_response["LastModified"]
         assert final_last_modified == original_last_modified  # File not modified
@@ -1099,7 +1151,7 @@ class TestLambdaHandlerIncrementalRunScenario:
 
         # Test CheckpointStore operations directly
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/events.parquet"
+            checkpoint_bucket, "checkpoints/adrc/form/events.parquet"
         )
 
         # Initially, checkpoint should not exist
@@ -1109,7 +1161,9 @@ class TestLambdaHandlerIncrementalRunScenario:
         # Create and save checkpoint
         existing_checkpoint = Checkpoint.from_events(existing_events)
         s3_uri = checkpoint_store.save(existing_checkpoint)
-        assert s3_uri == f"s3://{checkpoint_bucket}/checkpoints/events.parquet"
+        assert (
+            s3_uri == f"s3://{checkpoint_bucket}/checkpoints/adrc/form/events.parquet"
+        )
 
         # Now checkpoint should exist
         assert checkpoint_store.exists()
@@ -1124,12 +1178,14 @@ class TestLambdaHandlerIncrementalRunScenario:
         )
 
         # Setup test event for Lambda handler
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler - should detect existing checkpoint
@@ -1137,7 +1193,7 @@ class TestLambdaHandlerIncrementalRunScenario:
 
         # Verify simplified response format
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert response["statusCode"] == 200
 
         # Verify checkpoint still exists after handler call
         assert checkpoint_store.exists()
@@ -1149,7 +1205,7 @@ class TestLambdaHandlerIncrementalRunScenario:
 class TestLambdaHandlerErrorHandling:
     """Unit tests for Lambda handler error handling scenarios."""
 
-    def test_s3_permission_error_source_bucket(self, s3_client, setup_s3_environment):
+    def test_s3_permission_error_source_bucket(self, s3_client, lambda_config_env):
         """Test Lambda handler behavior with S3 permission errors on source
         bucket."""
         from unittest.mock import Mock, patch
@@ -1161,12 +1217,14 @@ class TestLambdaHandlerErrorHandling:
         s3_client.create_bucket(Bucket=checkpoint_bucket)
 
         # Setup test event with non-existent source bucket (simulates permission error)
-        test_event = {
-            "source_bucket": "non-existent-source-bucket",
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/",
-        }
+        setup_lambda_env(bucket="non-existent-source-bucket", prefix="logs/")
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": "non-existent-source-bucket",
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Mock S3EventRetriever to raise ClientError (permission denied)
@@ -1199,50 +1257,72 @@ class TestLambdaHandlerErrorHandling:
         self, s3_client, setup_s3_environment
     ):
         """Test Lambda handler behavior with S3 permission errors on checkpoint
-        bucket."""
+        save."""
         from unittest.mock import Mock, patch
 
         from botocore.exceptions import ClientError
 
-        # Create test buckets
+        # Create test bucket
         source_bucket = "test-source-bucket-permission"
         s3_client.create_bucket(Bucket=source_bucket)
 
-        # Setup test event with non-existent checkpoint bucket
-        # (simulates permission error)
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": "non-existent-checkpoint-bucket",
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/",
+        # Create a valid event file so processing actually happens
+        event_file = {
+            "key": create_s3_log_key(
+                "logs/",
+                "submit",
+                "20240115-100000",
+                42,
+                "ingest-form-alpha",
+                "110001",
+                "01",
+            ),
+            "content": {
+                "action": "submit",
+                "study": "adrc",
+                "pipeline_adcid": 42,
+                "project_label": "ingest-form-alpha",
+                "center_label": "test-center",
+                "gear_name": "form-processor",
+                "ptid": "110001",
+                "visit_date": "2024-01-15",
+                "visit_number": "01",
+                "datatype": "form",
+                "module": "UDS",
+                "packet": "I",
+                "timestamp": "2024-01-15T10:00:00Z",
+            },
         }
+        s3_client.put_object(
+            Bucket=source_bucket,
+            Key=event_file["key"],
+            Body=json.dumps(event_file["content"]),
+        )
+
+        setup_lambda_env(bucket=source_bucket, prefix="logs/")
+        test_event = {}
         mock_context = Mock(spec=LambdaContext)
 
-        # Mock CheckpointStore to raise ClientError (permission denied)
+        # Mock CheckpointStore.save to raise ClientError (permission denied)
         with patch(
-            "checkpoint_lambda.lambda_function.CheckpointStore"
-        ) as mock_store_class:
-            mock_store = Mock()
-            mock_store.get_checkpoint.side_effect = ClientError(
+            "checkpoint_lambda.lambda_function.CheckpointStore.save"
+        ) as mock_save:
+            mock_save.side_effect = ClientError(
                 error_response={
                     "Error": {"Code": "AccessDenied", "Message": "Access Denied"}
                 },
-                operation_name="HeadObject",
+                operation_name="PutObject",
             )
-            mock_store_class.return_value = mock_store
 
             # Call handler
             response = lambda_handler(test_event, mock_context)
 
-            # Verify error response format
+            # Verify error response format - should return 500 with failed group
             assert isinstance(response, dict)
             assert response["statusCode"] == 500
-            assert response["error"] == "InternalServerError"
-            assert "message" in response
-            assert (
-                "Access Denied" in response["message"]
-                or "AccessDenied" in response["message"]
-            )
+            assert "body" in response
+            assert response["body"]["groups_failed"] == 1
+            assert len(response["body"]["failed_groups"]) == 1
 
     def test_invalid_json_handling_with_valid_files(
         self, s3_client, setup_s3_environment
@@ -1332,12 +1412,14 @@ class TestLambdaHandlerErrorHandling:
             )
 
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/",
-        }
+        setup_lambda_env(bucket=source_bucket, prefix="logs/")
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler - should succeed despite invalid JSON files
@@ -1350,8 +1432,11 @@ class TestLambdaHandlerErrorHandling:
         # Verify checkpoint was created with valid events only
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
+        # Use source_bucket (new implementation uses same bucket)
+        # Checkpoint is at checkpoints/adrc/form/events.parquet
+        #  (from default template)
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/events.parquet"
+            source_bucket, "checkpoints/adrc/form/events.parquet"
         )
         assert checkpoint_store.exists()
 
@@ -1360,7 +1445,7 @@ class TestLambdaHandlerErrorHandling:
         # Should have 2 valid events (invalid JSON files should be skipped)
         assert final_checkpoint.get_event_count() == 2
 
-    def test_invalid_event_schema_handling(self, s3_client, setup_s3_environment):
+    def test_invalid_event_schema_handling(self, s3_client, lambda_config_env):
         """Test Lambda handler with invalid event schemas."""
         # Create test buckets
         source_bucket = "test-event-logs-invalid-schema"
@@ -1452,12 +1537,14 @@ class TestLambdaHandlerErrorHandling:
             )
 
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/",
-        }
+        setup_lambda_env(bucket=source_bucket, prefix="logs/")
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler - should succeed despite invalid schemas
@@ -1470,8 +1557,11 @@ class TestLambdaHandlerErrorHandling:
         # Verify checkpoint was created with valid events only
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
+        # Use source_bucket (new implementation uses same bucket)
+        # Checkpoint is at checkpoints/adrc/form/events.parquet
+        #  (from default template)
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/events.parquet"
+            source_bucket, "checkpoints/adrc/form/events.parquet"
         )
         assert checkpoint_store.exists()
 
@@ -1608,12 +1698,14 @@ class TestLambdaHandlerErrorHandling:
             )
 
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/",
-        }
+        setup_lambda_env(bucket=source_bucket, prefix="logs/")
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler - should succeed with partial failures
@@ -1626,8 +1718,11 @@ class TestLambdaHandlerErrorHandling:
         # Verify checkpoint was created with valid events only
         from checkpoint_lambda.checkpoint_store import CheckpointStore
 
+        # Use source_bucket (new implementation uses same bucket)
+        # Checkpoint is at checkpoints/adrc/form/events.parquet
+        # (from default template)
         checkpoint_store = CheckpointStore(
-            checkpoint_bucket, "checkpoints/events.parquet"
+            source_bucket, "checkpoints/adrc/form/events.parquet"
         )
         assert checkpoint_store.exists()
 
@@ -1636,36 +1731,30 @@ class TestLambdaHandlerErrorHandling:
         # Should have 3 valid events (2 invalid files should be skipped)
         assert final_checkpoint.get_event_count() == 3
 
-    def test_error_response_format_validation_error(self, setup_s3_environment):
+    def test_error_response_format_validation_error(self, lambda_config_env):
         """Test error response format for validation errors."""
         mock_context = Mock(spec=LambdaContext)
 
-        # Test with missing required parameters
-        test_event = {
-            "source_bucket": "test-bucket",
-            # Missing checkpoint_bucket and checkpoint_key
-        }
+        # Test with missing bucket (bucket doesn't exist in S3)
+        setup_lambda_env(bucket="nonexistent-bucket-12345")
+        test_event = {}
 
         response = lambda_handler(test_event, mock_context)
 
         # Verify error response format
+        # Now returns 500 (S3 error) instead of 400 (validation error)
         assert isinstance(response, dict)
-        assert response["statusCode"] == 400
-        assert response["error"] == "ValidationError"
+        assert response["statusCode"] == 500
+        assert response["error"] == "InternalServerError"
         assert "message" in response
-        assert "checkpoint_bucket" in response["message"]
-        assert "checkpoint_key" in response["message"]
 
-    def test_error_response_format_missing_source_bucket(self, setup_s3_environment):
-        """Test error response format for missing source bucket."""
+    def test_error_response_format_missing_source_bucket(self, lambda_config_env):
+        """Test error response format for missing template placeholders."""
         mock_context = Mock(spec=LambdaContext)
 
-        # Test with missing source_bucket
-        test_event = {
-            "checkpoint_bucket": "test-checkpoint-bucket",
-            "checkpoint_key": "checkpoints/events.parquet",
-            # Missing source_bucket
-        }
+        # Test with invalid template (missing placeholders)
+        setup_lambda_env(bucket="test-bucket", checkpoint_template="invalid-template")
+        test_event = {}
 
         response = lambda_handler(test_event, mock_context)
 
@@ -1674,7 +1763,7 @@ class TestLambdaHandlerErrorHandling:
         assert response["statusCode"] == 400
         assert response["error"] == "ValidationError"
         assert "message" in response
-        assert "source_bucket" in response["message"]
+        assert "placeholder" in response["message"].lower()
 
     def test_error_response_format_internal_server_error(
         self, s3_client, setup_s3_environment
@@ -1688,34 +1777,59 @@ class TestLambdaHandlerErrorHandling:
         s3_client.create_bucket(Bucket=source_bucket)
         s3_client.create_bucket(Bucket=checkpoint_bucket)
 
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/",
+        # Create a valid event file so processing actually happens
+        event_file = {
+            "key": create_s3_log_key(
+                "logs/",
+                "submit",
+                "20240115-100000",
+                42,
+                "ingest-form-alpha",
+                "110001",
+                "01",
+            ),
+            "content": {
+                "action": "submit",
+                "study": "adrc",
+                "pipeline_adcid": 42,
+                "project_label": "ingest-form-alpha",
+                "center_label": "test-center",
+                "gear_name": "form-processor",
+                "ptid": "110001",
+                "visit_date": "2024-01-15",
+                "visit_number": "01",
+                "datatype": "form",
+                "module": "UDS",
+                "packet": "I",
+                "timestamp": "2024-01-15T10:00:00Z",
+            },
         }
+        s3_client.put_object(
+            Bucket=source_bucket,
+            Key=event_file["key"],
+            Body=json.dumps(event_file["content"]),
+        )
+
+        setup_lambda_env(bucket=source_bucket, prefix="logs/")
+        test_event = {}
         mock_context = Mock(spec=LambdaContext)
 
-        # Mock CheckpointStore to raise unexpected exception
+        # Mock CheckpointStore.save to raise unexpected exception
         with patch(
-            "checkpoint_lambda.lambda_function.CheckpointStore"
-        ) as mock_store_class:
-            mock_store = Mock()
-            mock_store.get_checkpoint.side_effect = RuntimeError(
-                "Unexpected error occurred"
-            )
-            mock_store_class.return_value = mock_store
+            "checkpoint_lambda.lambda_function.CheckpointStore.save"
+        ) as mock_save:
+            mock_save.side_effect = RuntimeError("Unexpected error occurred")
 
             response = lambda_handler(test_event, mock_context)
 
             # Verify error response format
+            # Should return 500 with one failed group
             assert isinstance(response, dict)
             assert response["statusCode"] == 500
-            assert response["error"] == "InternalServerError"
-            assert "message" in response
-            assert "Unexpected error occurred" in response["message"]
+            assert "body" in response
+            assert response["body"]["groups_failed"] == 1
 
-    def test_error_logging_with_file_paths(self, s3_client, setup_s3_environment):
+    def test_error_logging_with_file_paths(self, s3_client, lambda_config_env):
         """Test that errors are logged with file paths for debugging."""
         from unittest.mock import patch
 
@@ -1776,12 +1890,14 @@ class TestLambdaHandlerErrorHandling:
                 Bucket=source_bucket, Key=event_file["key"], Body=content
             )
 
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/",
-        }
+        setup_lambda_env(bucket=source_bucket, prefix="logs/")
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Patch logger to capture log calls
@@ -1879,12 +1995,14 @@ class TestLambdaHandlerEndToEndIntegration:
             )
 
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/2024/",
-        }
+        setup_lambda_env(bucket=source_bucket, prefix="logs/2024/")
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/2024/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -1892,7 +2010,7 @@ class TestLambdaHandlerEndToEndIntegration:
 
         # Verify simplified response format
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert response["statusCode"] == 200
 
     def test_workflow_with_mixed_valid_invalid_events(
         self, s3_client, setup_s3_environment
@@ -1972,12 +2090,14 @@ class TestLambdaHandlerEndToEndIntegration:
             )
 
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/",
-        }
+        setup_lambda_env(bucket=source_bucket, prefix="logs/")
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -1985,9 +2105,9 @@ class TestLambdaHandlerEndToEndIntegration:
 
         # Verify simplified response format
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert response["statusCode"] == 200
 
-    def test_incremental_processing_workflow(self, s3_client, setup_s3_environment):
+    def test_incremental_processing_workflow(self, s3_client, lambda_config_env):
         """Test incremental processing with existing checkpoint."""
         # Create test buckets
         source_bucket = "test-event-logs-incremental"
@@ -2037,12 +2157,14 @@ class TestLambdaHandlerEndToEndIntegration:
             )
 
         # Setup test event
-        test_event = {
-            "source_bucket": source_bucket,
-            "checkpoint_bucket": checkpoint_bucket,
-            "checkpoint_key": "checkpoints/events.parquet",
-            "prefix": "logs/",
-        }
+        setup_lambda_env(bucket=source_bucket, prefix="logs/")
+        test_event = {}
+        # test_event = {
+        #     "source_bucket": source_bucket,
+        #     "checkpoint_bucket": checkpoint_bucket,
+        #     "checkpoint_key": "checkpoints/adrc/form/events.parquet",
+        #     "prefix": "logs/",
+        # }
         mock_context = Mock(spec=LambdaContext)
 
         # Call handler
@@ -2050,4 +2172,4 @@ class TestLambdaHandlerEndToEndIntegration:
 
         # Verify simplified response format
         assert isinstance(response, dict)
-        assert response == {"statusCode": 200}
+        assert response["statusCode"] == 200

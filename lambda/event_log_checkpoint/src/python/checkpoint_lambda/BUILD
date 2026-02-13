@@ -10,7 +10,11 @@ python_aws_lambda_function(
 python_aws_lambda_layer(
     name="powertools",
     runtime="python3.12",
-    dependencies=["//:root#aws-lambda-powertools"],
+    dependencies=[
+        "//:root#aws-lambda-powertools",
+        "//:root#aws-xray-sdk",
+        "//:root#boto3",
+    ],
     include_sources=False,
 )
 

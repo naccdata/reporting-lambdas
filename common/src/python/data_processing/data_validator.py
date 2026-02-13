@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class ValidationResult:
     """Result of data validation."""
 
-    def __init__(self, is_valid: bool, errors: Optional[List[str]] = None):
+    def __init__(self, is_valid: bool, errors: Optional[List[str]] = None) -> None:
         self.is_valid = is_valid
         self.errors = errors or []
 
@@ -27,7 +27,7 @@ class ValidationResult:
 class BatchValidationResult:
     """Result of batch data validation."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.total_records = 0
         self.valid_records = 0
         self.invalid_records = 0

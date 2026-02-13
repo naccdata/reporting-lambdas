@@ -169,5 +169,7 @@ dist
 *.tfstate.backup
 .terraform
 
-# Mac
-*.DS_Store*
+# Lambda test outputs
+response.json
+
+.DS_Store
