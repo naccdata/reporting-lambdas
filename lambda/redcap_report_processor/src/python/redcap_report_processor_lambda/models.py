@@ -15,7 +15,9 @@ class REDCapProcessingInputEvent(BaseModel):
     )
     report_id: Optional[str] = Field(
         default=None,
-        description="The report ID to pull; if not provided, pulls all records from the project",
+        description=(
+            "The report ID to pull; if not provided, pulls all records from the project"
+        ),
     )
 
     # full path will be built as

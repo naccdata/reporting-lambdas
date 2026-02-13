@@ -9,7 +9,6 @@ from datetime import datetime
 import polars as pl
 import pytest
 from polars import DataFrame
-from testing.moto_fixtures import moto_server, s3_client, setup_s3_environment
 
 
 class TestCheckpointStore:

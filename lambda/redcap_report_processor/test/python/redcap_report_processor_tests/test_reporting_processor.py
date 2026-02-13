@@ -6,7 +6,6 @@ from typing import Any, Dict, List
 from unittest.mock import patch
 
 from redcap_report_processor_lambda.reporting_processor import process_data
-from testing.moto_fixtures import moto_server, s3_client, setup_s3_environment
 
 
 class MockREDCapProject:

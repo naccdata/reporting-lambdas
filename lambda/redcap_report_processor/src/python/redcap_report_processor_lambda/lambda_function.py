@@ -96,7 +96,7 @@ def parse_input_event(
     """
     # Parse event parameters
     parameter_path = event.get("parameter_path")
-    report_id = event.get("report_id", None)
+    report_id = event.get("report_id")
     s3_postfix = event.get("s3_postfix")
     s3_prefix = event.get("s3_prefix", "nacc-reporting/bronze-tables/redcap")
     environment = event.get("environment", "prod")

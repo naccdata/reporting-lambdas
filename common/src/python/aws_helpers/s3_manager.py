@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Literal, Optional
 
 import boto3
 import polars as pl
-import pyarrow
 from botocore.exceptions import ClientError, NoCredentialsError
 
 logger = logging.getLogger(__name__)
@@ -45,7 +44,7 @@ def s3_retry(func, max_retries: int = 3):
 
         # This should never be reached due to the loop structure, but added for
         # type safety
-        raise S3Error(f"Failed to execute S3 command after {self.max_retries} retries")
+        raise S3Error(f"Failed to execute S3 command after {max_retries} retries")
 
     return wrapper
 

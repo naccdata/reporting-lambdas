@@ -2,7 +2,7 @@
 
 import io
 from datetime import datetime
-from typing import Tuple, Optional
+from typing import Optional, Union
 
 import boto3
 import polars as pl
@@ -18,7 +18,9 @@ from .models import REDCapProcessingInputEvent, REDCapProcessingResult
 logger = Logger()
 
 
-def get_redcap_records(parameter_path: str, report_id: Optional[str] = None) -> str:
+def get_redcap_records(
+    parameter_path: str, report_id: Optional[str] = None
+) -> Union[str, list[dict[str, str]]]:
     """Get REDCap records as a CSV string.
 
     If a report ID is provided, pulls records from the report, else
@@ -63,7 +65,6 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
         Processing result with metrics
     """
     start_time = datetime.utcnow()
-    timestamp = start_time.strftime("%Y%m%d-%H%M%S")
 
     try:
         logger.info("Starting REDCap report processor")
@@ -82,6 +83,8 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
 
         # get records and write to parquet
         records = get_redcap_records(event.parameter_path, event.report_id)
+        # REDCap API returns str when exp_format="csv"
+        assert isinstance(records, str), "Expected CSV string from REDCap API"
         df_lazy = pl.scan_csv(io.StringIO(records))
         df = df_lazy.collect()
 
