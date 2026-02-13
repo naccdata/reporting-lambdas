@@ -1,0 +1,49 @@
+# Example Terraform variables file for REDCap Report Processor Lambda
+# Copy this file to terraform.tfvars and customize the values
+
+# Required
+parameter_path = "/redcap/aws/your-redcap-report"
+s3_postfix     = "path/to/your/target/file.parquet"
+s3_prefix      = "your-bucket/some-path"
+
+# Optional
+report_id      = "123"
+mode           = "overwrite"
+region         = "us-west-2"
+environment    = "dev"
+log_level      = "INFO"
+
+# Optional: Layer management (choose one strategy)
+
+# Strategy 1: Automatic layer reuse (recommended for most cases)
+reuse_existing_layers   = true
+use_external_layer_arns = false
+force_layer_update      = false
+
+# Strategy 2: Use external layer ARNs (for cross-project reuse)
+# reuse_existing_layers   = false
+# use_external_layer_arns = true
+# external_layer_arns = [
+#   "arn:aws:lambda:us-east-1:123456789012:layer:powertools:1",
+#   "arn:aws:lambda:us-east-1:123456789012:layer:data-processing:2"
+# ]
+
+# Strategy 3: Force layer updates (for development)
+# reuse_existing_layers = false
+# use_external_layer_arns = false
+# force_layer_update = true
+
+# Optional: Lambda configuration
+lambda_timeout     = 900  # 15 minutes
+lambda_memory_size = 3008 # 3GB
+log_retention_days = 30
+
+# Optional: Monitoring
+# alarm_sns_topic_arn = "arn:aws:sns:us-east-1:123456789012:alerts"
+
+# Optional: Additional tags
+additional_tags = {
+  Owner       = "data-engineering"
+  CostCenter  = "analytics"
+  Application = "event-log-processing"
+}

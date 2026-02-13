@@ -31,7 +31,7 @@ class BatchValidationResult:
         self.total_records = 0
         self.valid_records = 0
         self.invalid_records = 0
-        self.errors: List[Dict[str, Any]] = []
+        self.errors: List[Dict[str, Any]] = []  # type: ignore
 
     @property
     def success_rate(self) -> float:

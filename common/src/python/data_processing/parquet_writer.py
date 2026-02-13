@@ -57,9 +57,7 @@ class ParquetWriter:
             output_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
             # Write parquet file
-            df.write_parquet(
-                output_path, compression=self.compression, use_pyarrow=True
-            )
+            df.write_parquet(output_path, compression=self.compression)
 
             logger.info(f"Successfully wrote {len(df)} rows to {output_path}")
 
