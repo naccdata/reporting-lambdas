@@ -97,7 +97,7 @@ def parse_input_event(
     # Parse event parameters
     parameter_path = event.get("parameter_path")
     report_id = event.get("report_id")
-    s3_postfix = event.get("s3_postfix")
+    s3_suffix = event.get("s3_suffix")
     s3_prefix = event.get("s3_prefix", "nacc-reporting/bronze-tables/redcap")
     environment = event.get("environment", "prod")
     mode = event.get("mode", "overwrite")
@@ -113,7 +113,7 @@ def parse_input_event(
             "invocation_parameters": {
                 "parameter_path": parameter_path,
                 "report_id": report_id,
-                "s3_postfix": s3_postfix,
+                "s3_suffix": s3_suffix,
                 "s3_prefix": s3_prefix,
                 "environment": environment,
                 "mode": mode,
@@ -129,7 +129,7 @@ def parse_input_event(
     return REDCapProcessingInputEvent(
         parameter_path=parameter_path,  # type: ignore
         report_id=report_id if report_id else None,
-        s3_postfix=s3_postfix,  # type: ignore
+        s3_suffix=s3_suffix,  # type: ignore
         s3_prefix=s3_prefix,
         environment=environment,
         mode=mode,

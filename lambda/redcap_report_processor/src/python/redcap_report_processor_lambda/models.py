@@ -21,11 +21,11 @@ class REDCapProcessingInputEvent(BaseModel):
     )
 
     # full path will be built as
-    # <s3_prefix>/<environment>/<s3_key>
+    # <s3_prefix>/<environment>/<s3_suffix>
     # e.g.
-    # nacc-reporting/bronze-tables/redcap/prod/my-s3-postfix/to/some/file.parquet
-    s3_postfix: str = Field(
-        description="S3 postfix to write to; must contain parquet filename"
+    # nacc-reporting/bronze-tables/redcap/prod/my-s3-suffix/to/some/file.parquet
+    s3_suffix: str = Field(
+        description="S3 suffix to write to; must contain parquet filename"
     )
     s3_prefix: str = Field(
         default="nacc-reporting/bronze-tables/redcap",
@@ -47,9 +47,9 @@ class REDCapProcessingInputEvent(BaseModel):
     def strip_slashes(cls, value: str) -> str:
         return value.rstrip("/")
 
-    @field_validator("s3_postfix", mode="after")
+    @field_validator("s3_suffix", mode="after")
     @classmethod
-    def validate_s3_postfix(cls, value: str) -> str:
+    def validate_s3_suffix(cls, value: str) -> str:
         value = value.rstrip("/")
         assert value.endswith(".parquet"), "Expecting parquet file"
 
@@ -58,7 +58,7 @@ class REDCapProcessingInputEvent(BaseModel):
     @property
     def s3_uri(self) -> str:
         """Build the full S3 URI."""
-        return f"{self.s3_prefix}/{self.environment}/{self.s3_postfix}"
+        return f"{self.s3_prefix}/{self.environment}/{self.s3_suffix}"
 
     @property
     def s3_bucket(self) -> str:

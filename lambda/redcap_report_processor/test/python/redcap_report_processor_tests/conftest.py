@@ -10,7 +10,7 @@ def valid_event():
     return {
         "parameter_path": "/redcap/aws/pid_0/",
         "report_id": "123",
-        "s3_postfix": "testing/file.parquet",
+        "s3_suffix": "testing/file.parquet",
         "s3_prefix": "dummy-bucket/redcap/",
         "environment": "sandbox",
         "mode": "overwrite",
@@ -24,7 +24,7 @@ def valid_input(valid_event):
     return REDCapProcessingInputEvent(
         parameter_path=valid_event["parameter_path"],
         report_id=valid_event["report_id"],
-        s3_postfix=valid_event["s3_postfix"],
+        s3_suffix=valid_event["s3_suffix"],
         s3_prefix=valid_event["s3_prefix"],
         environment=valid_event["environment"],
         mode=valid_event["mode"],

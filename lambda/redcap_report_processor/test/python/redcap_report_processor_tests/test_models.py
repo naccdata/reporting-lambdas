@@ -18,7 +18,7 @@ class TestREDCapProcessingInputEvent:
         """Test successful creation of REDCapProcessingInputEvent."""
         assert valid_input.parameter_path == "/redcap/aws/pid_0"
         assert valid_input.report_id == "123"
-        assert valid_input.s3_postfix == "testing/file.parquet"
+        assert valid_input.s3_suffix == "testing/file.parquet"
         assert valid_input.s3_prefix == "dummy-bucket/redcap"
         assert valid_input.environment == "sandbox"
         assert valid_input.mode == "overwrite"
@@ -38,7 +38,7 @@ class TestREDCapProcessingInputEvent:
         # Assert
         assert parsed["parameter_path"] == "/redcap/aws/pid_0"
         assert parsed["report_id"] == "123"
-        assert parsed["s3_postfix"] == "testing/file.parquet"
+        assert parsed["s3_suffix"] == "testing/file.parquet"
         assert parsed["s3_prefix"] == "dummy-bucket/redcap"
         assert parsed["environment"] == "sandbox"
         assert parsed["mode"] == "overwrite"
@@ -105,7 +105,7 @@ class TestModelValidation:
         # Check that required fields are mentioned in the error
         error_messages = str(exc_info.value)
         assert "parameter_path" in error_messages
-        assert "s3_postfix" in error_messages
+        assert "s3_suffix" in error_messages
 
     def test_processing_result_missing_required_fields(self):
         """Test ProcessingResult validation with missing required fields."""

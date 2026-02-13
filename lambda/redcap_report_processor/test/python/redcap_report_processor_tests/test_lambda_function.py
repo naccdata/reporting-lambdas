@@ -61,7 +61,7 @@ class TestLambdaHandler:
             "2 validation errors for REDCapProcessingInputEvent",
             "Input should be a valid string",
             "parameter_path",
-            "s3_postfix",
+            "s3_suffix",
         ]:
             assert text in body["details"]
 
