@@ -296,6 +296,8 @@ Each lambda includes Terraform configuration for infrastructure deployment:
 - **Batch Deployment**: Deploy multiple lambdas using shared modules
 - **Common Infrastructure**: Reusable Terraform modules for standard patterns
 
+See each lambda's `docs/DEPLOYMENT.md` for detailed deployment instructions and `docs/TERRAFORM.md` for configuration details.
+
 ### Lambda Layer Strategy
 
 All lambdas use a consistent multi-layer approach:
@@ -317,15 +319,18 @@ All lambdas use a consistent multi-layer approach:
 
 ### Deployment Commands
 
+See each lambda's `docs/DEPLOYMENT.md` for detailed deployment instructions. Quick reference:
+
 ```bash
 # Deploy individual lambda
-./bin/exec-in-devcontainer.sh bash -c "cd lambda/{lambda_name} && terraform apply"
+cd lambda/{lambda_name}
+./bin/exec-in-devcontainer.sh terraform apply
 
 # Deploy with layer updates
-./bin/exec-in-devcontainer.sh bash -c "cd lambda/{lambda_name} && terraform apply -var='reuse_existing_layers=false'"
+./bin/exec-in-devcontainer.sh terraform apply -var='force_layer_update=true'
 
 # Function-only deployment (fastest for code changes)
-./bin/exec-in-devcontainer.sh bash -c "cd lambda/{lambda_name} && terraform apply -target=aws_lambda_function.{lambda_name}"
+./bin/exec-in-devcontainer.sh terraform apply -target=aws_lambda_function.{lambda_name}
 ```
 
 ## Testing

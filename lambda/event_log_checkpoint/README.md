@@ -7,12 +7,14 @@ This Lambda function processes event log files from S3, creates incremental chec
 The Event Log Checkpoint Lambda:
 
 1. **Reads event log files** from an S3 bucket (JSON format)
-2. **Loads existing checkpoint** (Parquet file) if available
-3. **Processes only new events** since the last checkpoint
-4. **Validates and transforms** event data using Pydantic models
-5. **Writes updated checkpoint** back to S3 in Parquet format
+2. **Filters sandbox events** - Excludes events from projects matching "sandbox-*" pattern
+3. **Groups events by study and datatype** - Creates separate checkpoints for each combination
+4. **Loads existing checkpoints** (Parquet files) if available for each study-datatype
+5. **Processes only new events** since the last checkpoint for each study-datatype
+6. **Validates and transforms** event data using Pydantic models
+7. **Writes updated checkpoints** back to S3 in Parquet format
 
-This enables incremental processing of event logs without reprocessing historical data, making analytical queries fast and cost-effective.
+This enables incremental processing of event logs without reprocessing historical data, making analytical queries fast and cost-effective. By grouping checkpoints by study and datatype, queries can efficiently target specific data categories.
 
 ## Directory Structure
 
@@ -41,9 +43,41 @@ lambda/event_log_checkpoint/
 
 ## Key Features
 
+### Sandbox Event Filtering
+
+Automatically excludes events from sandbox projects (project_label matching "sandbox-*" pattern) to ensure production analytical queries only include live data. Sandbox projects are used by centers to practice submissions without affecting production data.
+
+### Study-Datatype Grouping
+
+Creates separate checkpoint files for each study-datatype combination, enabling:
+
+- Efficient queries targeting specific data categories
+- Independent processing state per study-datatype
+- Isolated failure handling (one checkpoint failure doesn't affect others)
+- Parallel processing opportunities
+
+### Checkpoint File Naming
+
+Checkpoint files follow a configurable template pattern with `{study}` and `{datatype}` placeholders.
+
+**Default Template**: `checkpoints/{study}/{datatype}/events.parquet`
+
+**Example Output**:
+- `checkpoints/adrc/form/events.parquet`
+- `checkpoints/adrc/dicom/events.parquet`
+- `checkpoints/dvcid/form/events.parquet`
+- `checkpoints/leads/dicom/events.parquet`
+
+**Alternative Templates**:
+- Flat structure: `checkpoints/{study}-{datatype}-events.parquet`
+- With environment prefix: `prod/checkpoints/{study}/{datatype}/events.parquet`
+- Custom naming: `data/{study}/checkpoints/{datatype}.parquet`
+
+The template is configured via the `CHECKPOINT_KEY_TEMPLATE` environment variable and must contain both `{study}` and `{datatype}` placeholders.
+
 ### Incremental Processing
 
-Only processes new event log files since the last checkpoint, avoiding expensive reprocessing of historical data.
+Only processes new event log files since the last checkpoint for each study-datatype combination, avoiding expensive reprocessing of historical data. Each study-datatype maintains its own processing timestamp.
 
 ### Efficient Data Format
 
@@ -73,19 +107,81 @@ AWS X-Ray integration for:
 
 The Lambda function uses these environment variables:
 
-| Variable            | Description                          | Example                        |
-| ------------------- | ------------------------------------ | ------------------------------ |
-| `SOURCE_BUCKET`     | S3 bucket with event log files       | `nacc-event-logs`              |
-| `CHECKPOINT_BUCKET` | S3 bucket for checkpoint files       | `nacc-checkpoints`             |
-| `CHECKPOINT_KEY`    | S3 key for checkpoint Parquet file   | `checkpoints/events.parquet`   |
-| `LOG_LEVEL`         | Logging level (INFO, DEBUG, WARNING) | `INFO`                         |
-| `POWERTOOLS_*`      | AWS Lambda Powertools configuration  | Set automatically by framework |
+| Variable                  | Description                                                      | Example                                          | Required |
+| ------------------------- | ---------------------------------------------------------------- | ------------------------------------------------ | -------- |
+| `BUCKET`                  | S3 bucket for event logs and checkpoints                         | `submission-events`                              | Yes      |
+| `PREFIX`                  | S3 prefix for event log files                                    | `prod/logs/` or `""` (empty for root)            | No       |
+| `CHECKPOINT_BUCKET`       | S3 bucket for checkpoint files (informational only)              | `submission-events`                              | No       |
+| `CHECKPOINT_KEY_TEMPLATE` | Template for checkpoint keys with {study} and {datatype}         | `prod/checkpoints/{study}/{datatype}/events.parquet` | Yes      |
+| `LOG_LEVEL`               | Logging level (INFO, DEBUG, WARNING)                             | `INFO`                                           | No       |
+| `ENVIRONMENT`             | Environment name (dev/staging/prod)                              | `dev`                                            | No       |
+| `POWERTOOLS_*`            | AWS Lambda Powertools configuration                              | Set automatically by framework                   | No       |
+
+### CHECKPOINT_KEY_TEMPLATE
+
+This variable defines the S3 key pattern for checkpoint files. It must contain two placeholders:
+
+- `{study}` - Replaced with the study identifier (e.g., "adrc", "dvcid", "leads")
+- `{datatype}` - Replaced with the datatype identifier (e.g., "form", "dicom", "apoe")
+
+**Example templates**:
+
+```bash
+# Production environment
+CHECKPOINT_KEY_TEMPLATE="prod/checkpoints/{study}/{datatype}/events.parquet"
+
+# Development environment
+CHECKPOINT_KEY_TEMPLATE="dev/checkpoints/{study}/{datatype}/events.parquet"
+
+# Nested folder structure
+CHECKPOINT_KEY_TEMPLATE="prod/checkpoints/{study}/{datatype}/events.parquet"
+```
+
+**Validation**: The Lambda will fail at startup if the template is missing either placeholder.
 
 ## Development Workflow
 
 This repo has a devcontainer definition that can be used in development.
 If you are working in an IDE that supports it, you can just use the devcontainer directly.
 Otherwise, the `bin` directory includes scripts that use the devcontainer CLI to manage the devcontainer on the host machine.
+
+## Event Processing Behavior
+
+### Sandbox Event Filtering
+
+The Lambda automatically filters out events from sandbox projects to ensure production data quality:
+
+- **Pattern**: Events with `project_label` starting with "sandbox-" are excluded
+- **Examples of filtered projects**:
+  - `sandbox-form`
+  - `sandbox-dicom-leads`
+  - `sandbox-form-alpha`
+- **Examples of included projects**:
+  - `ingest-form`
+  - `ingest-dicom`
+  - `adrc-form`
+
+**Monitoring**: The count of filtered events is logged and emitted as a CloudWatch metric (`EventsFiltered`).
+
+### Study-Datatype Grouping
+
+Events are grouped by their `study` and `datatype` fields, creating independent checkpoints:
+
+- **Study field**: Identifies the research study (e.g., "adrc", "dvcid", "leads")
+- **Datatype field**: Identifies the data category (e.g., "form", "dicom", "apoe", "biomarker")
+- **Checkpoint independence**: Each study-datatype combination maintains its own:
+  - Processing timestamp (last processed event)
+  - Checkpoint file in S3
+  - Processing state
+
+**Benefits**:
+
+- Queries can target specific study-datatype combinations without loading unrelated data
+- Failures in one checkpoint don't affect others
+- New study-datatype combinations are automatically detected and processed
+- Each combination can be reprocessed independently if needed
+
+**Monitoring**: Event counts per study-datatype are logged and emitted as CloudWatch metrics (`EventsProcessedByStudyDatatype`) with study and datatype dimensions.
 
 ### Build Lambda Packages
 
@@ -137,7 +233,7 @@ Build specific targets:
 
 ## Deployment
 
-See [TERRAFORM.md](./TERRAFORM.md) for detailed deployment instructions using Terraform.
+See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for detailed deployment instructions.
 
 Quick deployment:
 
@@ -146,9 +242,11 @@ Quick deployment:
 ./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda::
 
 # Deploy with Terraform
-./bin/exec-in-devcontainer.sh terraform init
+cd lambda/event_log_checkpoint
 ./bin/exec-in-devcontainer.sh terraform apply
 ```
+
+For Terraform configuration, see [docs/TERRAFORM.md](./docs/TERRAFORM.md).
 
 ## Monitoring
 
@@ -160,12 +258,45 @@ View Lambda execution logs:
 - Structured JSON format with correlation IDs
 - Configurable retention (default: 30 days)
 
+**Key log events**:
+
+- Sandbox event filtering with filtered count
+- Study-datatype grouping with event counts per group
+- Checkpoint save operations with study, datatype, and event count
+- Checkpoint save failures with error details
+- Processing summary with totals and group details
+
+### CloudWatch Metrics
+
+Custom metrics emitted by the Lambda:
+
+| Metric Name                       | Type  | Dimensions         | Description                                    |
+| --------------------------------- | ----- | ------------------ | ---------------------------------------------- |
+| `EventsFiltered`                  | Count | None               | Number of sandbox events filtered out          |
+| `EventsProcessedByStudyDatatype`  | Count | Study, Datatype    | Events processed per study-datatype group      |
+| `CheckpointsSaved`                | Count | None               | Number of checkpoints successfully saved       |
+| `CheckpointSaveFailures`          | Count | Study, Datatype    | Number of checkpoint save failures             |
+
+**Namespace**: `EventLogCheckpoint`
+
+**Use cases**:
+
+- Monitor filtering effectiveness (how many sandbox events are excluded)
+- Track processing volume per study-datatype combination
+- Alert on checkpoint save failures for specific study-datatype groups
+- Analyze processing patterns across different data categories
+
 ### CloudWatch Alarms
 
 Automatic alarms for:
 
 - **Error rate**: Triggers when errors occur
 - **Duration**: Triggers when execution time exceeds threshold
+
+**Recommended additional alarms**:
+
+- Alert on `CheckpointSaveFailures` > 0 for critical study-datatype combinations
+- Alert on `EventsFiltered` anomalies (unexpected spike in sandbox events)
 
 ### X-Ray Tracing
 
@@ -247,6 +378,10 @@ Separate layers enable fast function-only deployments.
 
 ## Related Documentation
 
-- [TERRAFORM.md](./TERRAFORM.md) - Terraform deployment guide
+- [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) - Deployment guide
+- [docs/TERRAFORM.md](./docs/TERRAFORM.md) - Terraform configuration guide
+- [docs/ENVIRONMENTS.md](./docs/ENVIRONMENTS.md) - Environment management guide (dev/staging/prod)
+- [docs/EVENT-LOG-ARCHIVAL.md](./docs/EVENT-LOG-ARCHIVAL.md) - Event log archival and lifecycle management
+- [docs/PRODUCTION-READINESS.md](./docs/PRODUCTION-READINESS.md) - Production readiness checklist
 - [context/docs/lambda-patterns.md](../../context/docs/lambda-patterns.md) - Lambda design patterns
 - [context/docs/event-log-format.md](../../context/docs/event-log-format.md) - Event log format specification

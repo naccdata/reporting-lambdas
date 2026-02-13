@@ -8,7 +8,7 @@ from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
-from polars import read_parquet
+from polars import Datetime, col, read_parquet
 from polars.exceptions import ComputeError, PolarsError
 
 from checkpoint_lambda.checkpoint import Checkpoint
@@ -69,6 +69,13 @@ class CheckpointStore:
         try:
             s3_uri = f"s3://{self.bucket}/{self.key}"
             df = read_parquet(s3_uri)
+
+            # Ensure timestamp column has UTC timezone by casting to the expected schema
+            # This handles both naive and timezone-aware datetimes from parquet
+            if "timestamp" in df.columns:
+                df = df.with_columns(
+                    col("timestamp").cast(Datetime("us", time_zone="UTC"))
+                )
 
             return Checkpoint(df)
 

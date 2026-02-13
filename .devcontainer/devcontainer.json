@@ -2,8 +2,12 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/python
 {
 	"name": "Python 3",
-	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/python:2-3.12-bullseye",
+	// Use Dockerfile to remove Yarn repository and avoid GPG key expiry issues
+	// See: https://github.com/devcontainers/features/issues/1543
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": "."
+	},
 	"features": {
 		"ghcr.io/devcontainers/features/aws-cli:1": {
 			"version": "latest"

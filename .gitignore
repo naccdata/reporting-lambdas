@@ -168,3 +168,8 @@ dist
 *.tfstate
 *.tfstate.backup
 .terraform
+
+# Lambda test outputs
+response.json
+
+.DS_Store

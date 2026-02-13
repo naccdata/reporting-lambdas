@@ -26,6 +26,16 @@ output "lambda_function_version" {
   value       = aws_lambda_function.event_log_checkpoint.version
 }
 
+output "lambda_alias_arn" {
+  description = "ARN of the Lambda alias (stable endpoint)"
+  value       = aws_lambda_alias.current.arn
+}
+
+output "lambda_alias_name" {
+  description = "Name of the Lambda alias"
+  value       = aws_lambda_alias.current.name
+}
+
 # Layer outputs (only when not using external layers)
 output "powertools_layer_arn" {
   description = "ARN of the Powertools layer (null when using external layers)"
@@ -135,10 +145,27 @@ output "layer_management_strategy" {
 output "deployment_info" {
   description = "Information about the deployment configuration"
   value = {
-    source_bucket     = var.source_bucket
-    checkpoint_bucket = var.checkpoint_bucket
-    checkpoint_key    = var.checkpoint_key
-    environment       = var.environment
-    log_level         = var.log_level
+    source_bucket           = var.source_bucket
+    checkpoint_bucket       = var.checkpoint_bucket
+    checkpoint_key_template = var.checkpoint_key_template
+    environment             = var.environment
+    log_level               = var.log_level
   }
+}
+
+# Lifecycle policy outputs
+output "lifecycle_policy_enabled" {
+  description = "Whether S3 lifecycle policy is enabled for event log management"
+  value       = var.manage_source_bucket_lifecycle
+}
+
+output "lifecycle_policy_configuration" {
+  description = "S3 lifecycle policy configuration for event log management"
+  value = var.manage_source_bucket_lifecycle ? {
+    archival_enabled             = var.enable_event_log_archival
+    glacier_transition_days      = var.enable_event_log_archival ? var.days_until_glacier_transition : null
+    deep_archive_transition_days = var.enable_event_log_archival && var.days_until_deep_archive_transition > 0 ? var.days_until_deep_archive_transition : null
+    expiration_days              = var.days_until_expiration > 0 ? var.days_until_expiration : null
+    applies_to_prefix            = var.event_log_prefix != "" ? var.event_log_prefix : "all files"
+  } : null
 }

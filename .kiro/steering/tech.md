@@ -114,6 +114,35 @@ long_filename = (
 - **pytest** with verbose output (`-vv`)
 - **Hypothesis** for property-based testing (minimum 100 iterations per property test)
 
+#### Using Tests for Information Gathering
+
+When writing exploratory tests to gather information about behavior (e.g., debugging timezone handling, investigating data formats), add a failing assertion at the end to ensure output is printed:
+
+```python
+def test_investigate_datetime_behavior():
+    """Exploratory test to understand datetime behavior."""
+    from datetime import datetime, timezone
+    
+    # Gather information
+    naive_dt = datetime(2024, 1, 15, 10, 0, 0)
+    aware_dt = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+    
+    print(f"Naive datetime: {naive_dt}")
+    print(f"Naive tzinfo: {naive_dt.tzinfo}")
+    print(f"Aware datetime: {aware_dt}")
+    print(f"Aware tzinfo: {aware_dt.tzinfo}")
+    
+    # Force test to fail so output is printed
+    assert False, "Exploratory test - review output above"
+```
+
+**Why this works:**
+- pytest only shows print output for failing tests by default
+- The failing assertion ensures you see all the debug output
+- The assertion message reminds you this is an exploratory test
+
+**Remember:** Delete these exploratory tests once you've learned what you needed. They should not be committed to the repository.
+
 ## Docker
 
 ### Dev Container
