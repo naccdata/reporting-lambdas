@@ -15,10 +15,14 @@ lambda_timeout     = 900  # 15 minutes
 lambda_memory_size = 3008 # 3GB
 log_retention_days = 90   # Longer retention for production
 
+# Scheduled Execution
+# Runs every Friday at 10:00 AM UTC (2-3 AM Pacific, 5-6 AM Eastern)
+schedule_expression = "cron(0 10 ? * FRI *)"
+
 # Layer Management
 # IMPORTANT: For first deployment, set reuse_existing_layers = false
 # After first deployment, change to true for faster deployments
-reuse_existing_layers   = true  # Set to true after first deployment
+reuse_existing_layers   = false # Set to true after first deployment
 use_external_layer_arns = false
 force_layer_update      = false
 

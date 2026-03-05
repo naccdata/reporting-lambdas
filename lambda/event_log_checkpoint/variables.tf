@@ -193,6 +193,13 @@ variable "manage_source_bucket_lifecycle" {
   default     = false
 }
 
+# Scheduling
+variable "schedule_expression" {
+  description = "EventBridge schedule expression for automated execution (e.g., 'rate(1 hour)' or 'cron(0 12 * * ? *)'). Leave empty to disable scheduled execution."
+  type        = string
+  default     = ""
+}
+
 # Tags
 variable "additional_tags" {
   description = "Additional tags to apply to all resources"
