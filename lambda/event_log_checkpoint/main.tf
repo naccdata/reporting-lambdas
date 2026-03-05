@@ -334,3 +334,35 @@ resource "aws_s3_bucket_lifecycle_configuration" "event_log_archival" {
     }
   }
 }
+
+# EventBridge rule for scheduled execution
+resource "aws_cloudwatch_event_rule" "schedule" {
+  count               = var.schedule_expression != "" ? 1 : 0
+  name                = "event-log-checkpoint-schedule-${var.environment}"
+  description         = "Schedule for event-log-checkpoint Lambda (${var.environment})"
+  schedule_expression = var.schedule_expression
+
+  tags = {
+    Name        = "event-log-checkpoint-schedule"
+    Environment = var.environment
+    Project     = "event-log-checkpoint"
+  }
+}
+
+# EventBridge target
+resource "aws_cloudwatch_event_target" "lambda_target" {
+  count     = var.schedule_expression != "" ? 1 : 0
+  rule      = aws_cloudwatch_event_rule.schedule[0].name
+  target_id = "EventLogCheckpointLambda"
+  arn       = aws_lambda_function.event_log_checkpoint.arn
+}
+
+# Permission for EventBridge to invoke Lambda
+resource "aws_lambda_permission" "allow_eventbridge" {
+  count         = var.schedule_expression != "" ? 1 : 0
+  statement_id  = "AllowExecutionFromEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.event_log_checkpoint.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.schedule[0].arn
+}
