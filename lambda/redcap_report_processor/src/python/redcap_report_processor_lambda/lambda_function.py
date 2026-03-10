@@ -5,6 +5,7 @@ lambdas that process data from various sources and create parquet files
 for analytics.
 """
 
+import os
 import json
 from typing import Any, Dict, Optional
 
@@ -98,11 +99,12 @@ def parse_input_event(
     parameter_path = event.get("parameter_path")
     report_id = event.get("report_id")
     s3_suffix = event.get("s3_suffix")
-    s3_prefix = event.get("s3_prefix", "nacc-reporting/bronze-tables/redcap")
-    environment = event.get("environment", "prod")
     mode = event.get("mode", "overwrite")
-    region = event.get("region", "us-west-2")
-    log_level = event.get("log_level", "INFO")
+
+    s3_prefix = os.environ.get("S3_PREFIX", "nacc-reporting/bronze-tables/redcap")
+    environment = os.environ.get("ENVIRONMENT", "prod")
+    region = os.environ.get("REGION", "us-west-2")
+    log_level = os.environ.get("LOG_LEVEL", "INFO")
 
     logger.setLevel(level=log_level.upper())
 

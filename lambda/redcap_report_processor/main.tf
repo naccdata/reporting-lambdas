@@ -10,18 +10,36 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  # Backend configuration for remote state management
+  backend "s3" {
+    bucket  = "nacc-terraform-state"
+    key     = "lambda/redcap-report-processor/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
+
+    # Note: DynamoDB locking intentionally omitted
+    # Team coordination via communication (Slack, etc.)
+  }
 }
 
 # Data sources to check for existing layers
 data "aws_lambda_layer_version" "powertools" {
   count      = var.reuse_existing_layers && !var.use_external_layer_arns ? 1 : 0
-  layer_name = "redcap-report-processor-powertools"
+  layer_name = "redcap-report-processor-powertools-${var.environment}"
 }
 
 data "aws_lambda_layer_version" "data_processing" {
   count      = var.reuse_existing_layers && !var.use_external_layer_arns ? 1 : 0
-  layer_name = "redcap-report-processor-data-processing"
+  layer_name = "redcap-report-processor-data-processing-${var.environment}"
 }
+
+data "aws_lambda_layer_version" "redcap_api" {
+  count      = var.reuse_existing_layers && !var.use_external_layer_arns ? 1 : 0
+  layer_name = "redcap-report-processor-redcap-api-${var.environment}"
+}
+
+data "aws_caller_identity" "current" {}
 
 # Lambda layers - only create if not reusing existing or if content changed
 resource "aws_lambda_layer_version" "powertools" {
@@ -29,12 +47,12 @@ resource "aws_lambda_layer_version" "powertools" {
     var.reuse_existing_layers && length(data.aws_lambda_layer_version.powertools) > 0 && !var.force_layer_update ? 0 : 1
   )
 
-  filename         = "../../dist/lambda.redcap_report_processor.src.python.checkpoint_lambda/powertools.zip"
-  layer_name       = "redcap-report-processor-powertools"
-  source_code_hash = filebase64sha256("../../dist/lambda.redcap_report_processor.src.python.checkpoint_lambda/powertools.zip")
+  filename         = "../../dist/lambda.redcap_report_processor.src.python.redcap_report_processor_lambda/powertools.zip"
+  layer_name       = "redcap-report-processor-powertools-${var.environment}"
+  source_code_hash = filebase64sha256("../../dist/lambda.redcap_report_processor.src.python.redcap_report_processor_lambda/powertools.zip")
 
   compatible_runtimes = ["python3.12"]
-  description         = "AWS Lambda Powertools layer for event log checkpoint function"
+  description         = "AWS Lambda Powertools layer for REDCap report processor function (${var.environment})"
 
   lifecycle {
     create_before_destroy = true
@@ -46,12 +64,29 @@ resource "aws_lambda_layer_version" "data_processing" {
     var.reuse_existing_layers && length(data.aws_lambda_layer_version.data_processing) > 0 && !var.force_layer_update ? 0 : 1
   )
 
-  filename         = "../../dist/lambda.redcap_report_processor.src.python.checkpoint_lambda/data_processing.zip"
-  layer_name       = "redcap-report-processor-data-processing"
-  source_code_hash = filebase64sha256("../../dist/lambda.redcap_report_processor.src.python.checkpoint_lambda/data_processing.zip")
+  filename         = "../../dist/lambda.redcap_report_processor.src.python.redcap_report_processor_lambda/data_processing.zip"
+  layer_name       = "redcap-report-processor-data-processing-${var.environment}"
+  source_code_hash = filebase64sha256("../../dist/lambda.redcap_report_processor.src.python.redcap_report_processor_lambda/data_processing.zip")
 
   compatible_runtimes = ["python3.12"]
-  description         = "Pydantic and Polars layer for data processing"
+  description         = "Pydantic and Polars layer for data processing (${var.environment})"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_lambda_layer_version" "redcap_api" {
+  count = var.use_external_layer_arns ? 0 : (
+    var.reuse_existing_layers && length(data.aws_lambda_layer_version.redcap_api) > 0 && !var.force_layer_update ? 0 : 1
+  )
+
+  filename         = "../../dist/lambda.redcap_report_processor.src.python.redcap_report_processor_lambda/redcap_api.zip"
+  layer_name       = "redcap-report-processor-redcap-api-${var.environment}"
+  source_code_hash = filebase64sha256("../../dist/lambda.redcap_report_processor.src.python.redcap_report_processor_lambda/redcap_api.zip")
+
+  compatible_runtimes = ["python3.12"]
+  description         = "REDCap API layer for communication with REDCap (${var.environment})"
 
   lifecycle {
     create_before_destroy = true
@@ -72,16 +107,23 @@ locals {
     aws_lambda_layer_version.data_processing[0].arn
   )
 
+  redcap_api_layer_arn = var.use_external_layer_arns ? var.external_layer_arns[1] : (
+    var.reuse_existing_layers && length(data.aws_lambda_layer_version.redcap_api) > 0 && !var.force_layer_update ?
+    data.aws_lambda_layer_version.redcap_api[0].arn :
+    aws_lambda_layer_version.redcap_api[0].arn
+  )
+
   # Combine all layer ARNs
   layer_arns = var.use_external_layer_arns ? var.external_layer_arns : [
     local.powertools_layer_arn,
     local.data_processing_layer_arn,
+    local.redcap_api_layer_arn,
   ]
 }
 
 # IAM role for Lambda function
 resource "aws_iam_role" "lambda_role" {
-  name = "redcap-report-processor-lambda-role"
+  name = "redcap-report-processor-lambda-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -105,7 +147,7 @@ resource "aws_iam_role" "lambda_role" {
 
 # S3 permissions for Lambda function
 resource "aws_iam_role_policy" "lambda_s3_policy" {
-  name = "redcap-report-processor-s3-policy"
+  name = "redcap-report-processor-s3-policy-${var.environment}"
   role = aws_iam_role.lambda_role.id
 
   policy = jsonencode({
@@ -118,8 +160,8 @@ resource "aws_iam_role_policy" "lambda_s3_policy" {
           "s3:ListBucket"
         ]
         Resource = [
-          "arn:aws:s3:::${var.source_bucket}",
-          "arn:aws:s3:::${var.source_bucket}/*"
+          "arn:aws:s3:::${var.s3_prefix}",
+          "arn:aws:s3:::${var.s3_prefix}/*"
         ]
       },
       {
@@ -130,9 +172,30 @@ resource "aws_iam_role_policy" "lambda_s3_policy" {
           "s3:DeleteObject"
         ]
         Resource = [
-          "arn:aws:s3:::${var.checkpoint_bucket}",
-          "arn:aws:s3:::${var.checkpoint_bucket}/*"
+          "arn:aws:s3:::${var.s3_prefix}",
+          "arn:aws:s3:::${var.s3_prefix}/*"
         ]
+      }
+    ]
+  })
+}
+
+# SSM Parameter Store permissions for Lambda function
+resource "aws_iam_role_policy" "lambda_ssm_policy" {
+  name = "redcap-report-processor-ssm-policy-${var.environment}"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/redcap/aws/*"
       }
     ]
   })
@@ -151,7 +214,7 @@ resource "aws_iam_role_policy_attachment" "lambda_xray" {
 
 # CloudWatch log group
 resource "aws_cloudwatch_log_group" "lambda_logs" {
-  name              = "/aws/lambda/redcap-report-processor"
+  name              = "/aws/lambda/redcap-report-processor-${var.environment}"
   retention_in_days = 30
 
   tags = {
@@ -163,23 +226,23 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
 
 # Lambda function
 resource "aws_lambda_function" "redcap_report_processor" {
-  function_name = "redcap-report-processor"
+  function_name = "redcap-report-processor-${var.environment}"
   role          = aws_iam_role.lambda_role.arn
-  handler       = "checkpoint_lambda.lambda_function.lambda_handler"
+  handler       = "redcap_report_processor_lambda.lambda_function.lambda_handler"
   runtime       = "python3.12"
-  timeout       = 900  # 15 minutes
-  memory_size   = 3008 # 3GB
+  timeout       = var.lambda_timeout
+  memory_size   = var.lambda_memory_size
 
-  filename         = "../../dist/lambda.redcap_report_processor.src.python.checkpoint_lambda/lambda.zip"
-  source_code_hash = filebase64sha256("../../dist/lambda.redcap_report_processor.src.python.checkpoint_lambda/lambda.zip")
+  filename         = "../../dist/lambda.redcap_report_processor.src.python.redcap_report_processor_lambda/lambda.zip"
+  source_code_hash = filebase64sha256("../../dist/lambda.redcap_report_processor.src.python.redcap_report_processor_lambda/lambda.zip")
 
   layers = local.layer_arns
 
   environment {
     variables = {
-      SOURCE_BUCKET           = var.source_bucket
-      CHECKPOINT_BUCKET       = var.checkpoint_bucket
-      CHECKPOINT_KEY          = var.checkpoint_key
+      S3_PREFIX               = var.s3_prefix
+      REGION                  = var.region
+      ENVIRONMENT             = var.environment
       LOG_LEVEL               = var.log_level
       POWERTOOLS_SERVICE_NAME = "redcap-report-processor"
     }
@@ -188,6 +251,9 @@ resource "aws_lambda_function" "redcap_report_processor" {
   tracing_config {
     mode = "Active" # Enable X-Ray tracing
   }
+
+  # Enable versioning - creates new version on each deployment
+  publish = true
 
   depends_on = [
     aws_iam_role_policy_attachment.lambda_basic_execution,
@@ -201,10 +267,21 @@ resource "aws_lambda_function" "redcap_report_processor" {
     Project     = "redcap-report-processor"
   }
 }
+# Lambda alias for stable endpoint
+resource "aws_lambda_alias" "current" {
+  name             = var.environment
+  description      = "Alias for ${var.environment} environment - points to current version"
+  function_name    = aws_lambda_function.redcap_report_processor.function_name
+  function_version = aws_lambda_function.redcap_report_processor.version
+
+  lifecycle {
+    ignore_changes = [function_version]
+  }
+}
 
 # CloudWatch alarms for monitoring
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
-  alarm_name          = "redcap-report-processor-errors"
+  alarm_name          = "redcap-report-processor-errors-${var.environment}"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "2"
   metric_name         = "Errors"
@@ -220,14 +297,14 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   }
 
   tags = {
-    Name        = "redcap-report-processor-errors"
+    Name        = "redcap-report-processor-errors-${var.environment}"
     Environment = var.environment
     Project     = "redcap-report-processor"
   }
 }
 
 resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
-  alarm_name          = "redcap-report-processor-duration"
+  alarm_name          = "redcap-report-processor-duration-${var.environment}"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "2"
   metric_name         = "Duration"
@@ -243,7 +320,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
   }
 
   tags = {
-    Name        = "redcap-report-processor-duration"
+    Name        = "redcap-report-processor-duration-${var.environment}"
     Environment = var.environment
     Project     = "redcap-report-processor"
   }
