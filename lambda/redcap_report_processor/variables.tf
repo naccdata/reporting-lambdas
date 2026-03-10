@@ -1,52 +1,15 @@
 # Variables for REDCap Report Processor
 
-# Required variables
-variable "parameter_path" {
-  description = "AWS Parameter path to REDCap report credentials"
-  type        = string
-
-  validation {
-    condition     = length(var.parameter_path) > 0
-    error_message = "Parameter path cannot be empty."
-  }
-}
-
-variable "s3_postfix" {
-  description = "S3 postfix to write to; must contain parquet filename"
-  type        = string
-
-  validation {
-    condition     = length(var.s3_postfix) > 0
-    error_message = "S3 postfix cannot be empty."
-  }
-}
-
-variable "report_id" {
-  description = "The report ID to pull; if not provided, pulls all records from the project"
-  type        = string
-}
-
 # Optional variables with defaults
 
 variable "s3_prefix" {
   description = "AWS S3 prefix to write to"
   type        = string
-  default     = "nacc-reporting"
+  default     = "nacc-reporting/bronze-tables/redcap"
 
   validation {
     condition     = length(var.s3_prefix) > 0
     error_message = "S3 prefix cannot be empty."
-  }
-}
-
-variable "mode" {
-  description = "If writing to an existing file, whether to overwrite or append"
-  type        = string
-  default     = "overwrite"
-
-  validation {
-    condition     = contains(["overwrite", "append"], var.environment)
-    error_message = "Mode must be one of: overwrite, append."
   }
 }
 
@@ -96,13 +59,13 @@ variable "use_external_layer_arns" {
 }
 
 variable "external_layer_arns" {
-  description = "List of external layer ARNs to use when use_external_layer_arns is true. Must include: [powertools_arn, data_processing_arn]"
+  description = "List of external layer ARNs to use when use_external_layer_arns is true. Must include: [powertools_arn, data_processing_arn, redcap_api_arn]"
   type        = list(string)
   default     = []
 
   validation {
-    condition     = var.use_external_layer_arns ? length(var.external_layer_arns) >= 2 : true
-    error_message = "When use_external_layer_arns is true, external_layer_arns must contain at least 2 ARNs (powertools and data_processing layers)."
+    condition     = var.use_external_layer_arns ? length(var.external_layer_arns) >= 3 : true
+    error_message = "When use_external_layer_arns is true, external_layer_arns must contain at least 3 ARNs (powertools, data_processing, and redcap_api layers)."
   }
 
   validation {
