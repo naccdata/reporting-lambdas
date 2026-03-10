@@ -30,7 +30,7 @@ python_requirement(
     name="redcap_reqs",
     requirements=[
         "redcap_api@ https://github.com/naccdata/redcap-api/releases/download/v0.1.4/redcap_api-0.1.4-py3-none-any.whl"
-    ]
+    ],
 )
 
 python_aws_lambda_layer(

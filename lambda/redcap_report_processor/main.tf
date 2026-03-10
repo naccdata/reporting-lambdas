@@ -39,6 +39,7 @@ data "aws_lambda_layer_version" "redcap_api" {
   layer_name = "redcap-report-processor-redcap-api-${var.environment}"
 }
 
+# Get AWS account ID of the current caller
 data "aws_caller_identity" "current" {}
 
 # Lambda layers - only create if not reusing existing or if content changed

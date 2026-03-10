@@ -5,8 +5,8 @@ lambdas that process data from various sources and create parquet files
 for analytics.
 """
 
-import os
 import json
+import os
 from typing import Any, Dict, Optional
 
 from aws_lambda_powertools import Logger
@@ -133,7 +133,7 @@ def parse_input_event(
         report_id=report_id if report_id else None,
         s3_suffix=s3_suffix,  # type: ignore
         s3_prefix=s3_prefix,
-        environment=environment,
+        environment=environment,  # type: ignore
         mode=mode,
         region=region,
     )
