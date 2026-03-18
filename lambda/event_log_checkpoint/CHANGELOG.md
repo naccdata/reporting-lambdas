@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes.
 
+## [1.0.1] - 2026-03-18
+
+### Fixed
+
+- S3 pagination: replaced single `list_objects_v2` call with paginator to handle buckets with more than 1,000 objects
+- File pattern regex updated to match new visit_date filename format (`YYYY-MM-DD`) instead of visit number
+
 ## [1.0.0] - 2026-02-04
 
 ### Added
