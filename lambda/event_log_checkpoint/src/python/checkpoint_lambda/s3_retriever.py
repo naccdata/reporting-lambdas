@@ -28,9 +28,11 @@ class S3EventRetriever:
     """
 
     # Default pattern:
-    #  log-{action}-{YYYYMMDD-HHMMSS}-{adcid}-{project}-{ptid}-{visitnum}.json
+    #  log-{action}-{YYYYMMDD-HHMMSS}-{adcid}-{project}-{ptid}-{visit_date}.json
+    #  where visit_date is YYYY-MM-DD
     DEFAULT_PATTERN = re.compile(
-        r"^.*log-(submit|pass-qc|not-pass-qc|delete)-\d{8}-\d{6}-\d+-[\w\-]+-[\w]+-[\w]+\.json$"
+        r"^.*log-(submit|pass-qc|not-pass-qc|delete)"
+        r"-\d{8}-\d{6}-\d+-[\w\-]+-[\w]+-\d{4}-\d{2}-\d{2}\.json$"
     )
 
     def __init__(
@@ -57,6 +59,9 @@ class S3EventRetriever:
     def list_event_files(self) -> List[str]:
         """List event files matching the configured pattern.
 
+        Paginates through all S3 results to handle buckets
+        with more than 1,000 objects.
+
         Returns:
             List of S3 keys matching the configured file pattern
 
@@ -64,15 +69,14 @@ class S3EventRetriever:
             ClientError: If S3 access fails
         """
         s3_client = boto3.client("s3")
+        paginator = s3_client.get_paginator("list_objects_v2")
 
         matching_files = []
 
-        # List objects from S3
-        response = s3_client.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
-
-        # Filter files that match the configured pattern
-        if "Contents" in response:
-            for obj in response["Contents"]:
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=self.prefix):
+            if "Contents" not in page:
+                continue
+            for obj in page["Contents"]:
                 key = obj["Key"]
                 if self.file_pattern.match(key):
                     matching_files.append(key)
