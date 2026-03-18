@@ -20,13 +20,13 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 
 # Test data constants to avoid line length issues
-SUBMIT_FULL_LOG = "log-submit-20240115-100000-42-ingest-form-alpha-110001-01.json"
-PASS_QC_FULL_LOG = "log-pass-qc-20240115-102000-42-ingest-form-alpha-110001-01.json"
+SUBMIT_FULL_LOG = "log-submit-20240115-100000-42-ingest-form-alpha-2024-01-15.json"
+PASS_QC_FULL_LOG = "log-pass-qc-20240115-102000-42-ingest-form-alpha-2024-01-15.json"
 NOT_PASS_QC_FULL_LOG = (
-    "log-not-pass-qc-20240116-143000-43-ingest-dicom-beta-220002-02.json"
+    "log-not-pass-qc-20240116-143000-43-ingest-dicom-beta-2024-01-16.json"
 )
-INVALID_CONTENT_LOG = "log-submit-20240116-100000-42-ingest-form-alpha-110001-02.json"
-JSON_ERROR_LOG = "log-submit-20240115-100000-42-ingest-form-alpha-110001-01.json"
+INVALID_CONTENT_LOG = "log-submit-20240116-100000-42-ingest-form-alpha-2024-01-16.json"
+JSON_ERROR_LOG = "log-submit-20240115-100000-42-ingest-form-alpha-2024-01-15.json"
 
 
 class TestS3EventRetrieverInit:
@@ -92,7 +92,7 @@ class TestListEventFiles:
 
         # Create a pattern that matches both short and full formats for testing
         test_pattern = re.compile(
-            r"^.*log-(submit|pass-qc|not-pass-qc|delete)-(\d{8}\.json|\d{8}-\d{6}-\d+-[\w\-]+-[\w]+-[\w]+\.json)$"
+            r"^.*log-(submit|pass-qc|not-pass-qc|delete)-(\d{8}\.json|\d{8}-\d{6}-\d+-[\w\-]+-[\w]+-\d{4}-\d{2}-\d{2}\.json)$"
         )
         retriever = S3EventRetriever(bucket, file_pattern=test_pattern)
         files = retriever.list_event_files()
@@ -128,7 +128,7 @@ class TestListEventFiles:
 
         # Create a pattern that matches both short and full formats for testing
         test_pattern = re.compile(
-            r"^.*log-(submit|pass-qc|not-pass-qc|delete)-(\d{8}\.json|\d{8}-\d{6}-\d+-[\w\-]+-[\w]+-[\w]+\.json)$"
+            r"^.*log-(submit|pass-qc|not-pass-qc|delete)-(\d{8}\.json|\d{8}-\d{6}-\d+-[\w\-]+-[\w]+-\d{4}-\d{2}-\d{2}\.json)$"
         )
         retriever = S3EventRetriever(bucket, prefix, file_pattern=test_pattern)
         files = retriever.list_event_files()
@@ -410,12 +410,12 @@ class TestRetrieveAndValidateEvents:
         # Upload files to S3
         s3_client.put_object(
             Bucket=bucket,
-            Key="log-submit-20240115-100000-42-ingest-form-alpha-110001-01.json",
+            Key=("log-submit-20240115-100000-42-ingest-form-alpha-2024-01-15.json"),
             Body=json.dumps(event_data_1).encode(),
         )
         s3_client.put_object(
             Bucket=bucket,
-            Key="log-pass-qc-20240116-100000-42-ingest-form-alpha-110001-01.json",
+            Key=("log-pass-qc-20240116-100000-42-ingest-form-alpha-2024-01-16.json"),
             Body=json.dumps(event_data_2).encode(),
         )
 
@@ -523,12 +523,12 @@ class TestRetrieveAndValidateEvents:
         # Upload files to S3
         s3_client.put_object(
             Bucket=bucket,
-            Key="log-submit-20240115-100000-42-ingest-form-alpha-110001-01.json",
+            Key=("log-submit-20240115-100000-42-ingest-form-alpha-2024-01-15.json"),
             Body=json.dumps(event_data_1).encode(),
         )
         s3_client.put_object(
             Bucket=bucket,
-            Key="log-pass-qc-20240116-100000-42-ingest-form-alpha-110001-01.json",
+            Key=("log-pass-qc-20240116-100000-42-ingest-form-alpha-2024-01-16.json"),
             Body=json.dumps(event_data_2).encode(),
         )
 
@@ -569,7 +569,7 @@ class TestRetrieveAndValidateEvents:
         # Upload one valid file
         s3_client.put_object(
             Bucket=bucket,
-            Key="log-submit-20240115-100000-42-ingest-form-alpha-110001-01.json",
+            Key=("log-submit-20240115-100000-42-ingest-form-alpha-2024-01-15.json"),
             Body=json.dumps(valid_event_data).encode(),
         )
 
@@ -580,8 +580,8 @@ class TestRetrieveAndValidateEvents:
         # Patch list_event_files to return both existing and non-existing files
         with patch.object(retriever, "list_event_files") as mock_list:
             mock_list.return_value = [
-                "log-submit-20240115-100000-42-ingest-form-alpha-110001-01.json",
-                "inaccessible-file-20240115-100000-42-ingest-form-alpha-110001-01.json",
+                ("log-submit-20240115-100000-42-ingest-form-alpha-2024-01-15.json"),
+                ("inaccessible-20240115-100000-42-ingest-form-alpha-2024-01-15.json"),
             ]
 
             valid_events, validation_errors = retriever.retrieve_and_validate_events()
@@ -589,9 +589,8 @@ class TestRetrieveAndValidateEvents:
         assert len(valid_events) == 1
         assert len(validation_errors) == 1
         assert valid_events[0].action == "submit"
-        assert (
-            validation_errors[0]["source_key"]
-            == "inaccessible-file-20240115-100000-42-ingest-form-alpha-110001-01.json"
+        assert validation_errors[0]["source_key"] == (
+            "inaccessible-20240115-100000-42-ingest-form-alpha-2024-01-15.json"
         )
         assert "S3 error" in str(validation_errors[0]["errors"])
 
@@ -681,10 +680,10 @@ class TestS3EventRetrieverPropertyTests:
         ),
         s3_keys=st.lists(
             st.one_of(
-                # Valid log files - modern pattern (simplified)
+                # Valid log files - visit_date pattern
                 st.builds(
                     lambda action: (
-                        f"log-{action}-20240115-100000-42-test-ABC123-01.json"
+                        f"log-{action}-20240115-100000-42-test-ABC123-2024-01-15.json"
                     ),
                     action=st.sampled_from(
                         ["submit", "pass-qc", "not-pass-qc", "delete"]
@@ -715,7 +714,9 @@ class TestS3EventRetrieverPropertyTests:
         """
         # Create a pattern that matches both short and full formats for testing
         test_pattern = re.compile(
-            r"^.*log-(submit|pass-qc|not-pass-qc|delete)-(\d{8}\.json|\d{8}-\d{6}-\d+-[\w\-]+-[\w]+-[\w]+\.json)$"
+            r"^.*log-(submit|pass-qc|not-pass-qc|delete)"
+            r"-(\d{8}\.json|\d{8}-\d{6}-\d+-[\w\-]+"
+            r"-[\w]+-\d{4}-\d{2}-\d{2}\.json)$"
         )
 
         # Create retriever with test pattern
