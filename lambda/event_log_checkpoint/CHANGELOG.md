@@ -8,6 +8,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes.
 
+## [1.1.0] - 2026-03-18
+
+### Added
+
+- Concurrent S3 file retrieval using `ThreadPoolExecutor` (default 50 threads) to handle 20k+ files within Lambda timeout
+- Global timestamp cutoff: handler now scans existing checkpoint parquet files on startup and passes the earliest last-processed timestamp to the retriever, skipping already-processed files at fetch time
+- Configurable `max_workers` parameter on `S3EventRetriever` for tuning concurrency
+
+### Changed
+
+- `S3EventRetriever.retrieve_and_validate_events()` now processes files concurrently instead of sequentially
+- Lambda handler uses global `since_timestamp` from existing checkpoints to avoid re-fetching all files on incremental runs
+- Exception handling in `_find_earliest_checkpoint_timestamp` narrowed from broad `Exception` to specific `CheckpointError`, `ClientError`, `OSError`
+
+### Performance
+
+- First run with 24,903 files: ~10 minutes (previously timed out at 15 minutes)
+- Incremental runs with no new files: seconds (previously ~10 minutes re-fetching everything)
+
 ## [1.0.1] - 2026-03-18
 
 ### Fixed
@@ -96,10 +115,10 @@ This section maps semantic versions (git tags) to AWS Lambda versions for each e
 
 ### Production Environment
 
-- **Semantic Version**: v1.0.0
-- **Git Tag**: v1.0.0
-- **AWS Lambda Version**: 2
-- **Deployed**: 2026-02-04
+- **Semantic Version**: v1.1.0
+- **Git Tag**: v1.1.0
+- **AWS Lambda Version**: 7
+- **Deployed**: 2026-03-18
 
 ### Staging Environment
 
