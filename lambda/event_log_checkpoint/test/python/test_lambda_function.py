@@ -33,7 +33,7 @@ def setup_lambda_env(bucket, prefix="", checkpoint_template=None):
     os.environ["CHECKPOINT_KEY_TEMPLATE"] = checkpoint_template
 
 
-def create_log_filename(action, timestamp, adcid, project, ptid, visit_num):
+def create_log_filename(action, timestamp, adcid, project, ptid, visit_date):
     """Create a log filename following the standard pattern.
 
     Args:
@@ -42,15 +42,15 @@ def create_log_filename(action, timestamp, adcid, project, ptid, visit_num):
         adcid: Pipeline/center identifier
         project: Project label
         ptid: Participant ID
-        visit_num: Visit number
+        visit_date: Visit date in YYYY-MM-DD format
 
     Returns:
         str: Formatted log filename
     """
-    return f"log-{action}-{timestamp}-{adcid}-{project}-{ptid}-{visit_num}.json"
+    return f"log-{action}-{timestamp}-{adcid}-{project}-{ptid}-{visit_date}.json"
 
 
-def create_s3_log_key(prefix, action, timestamp, adcid, project, ptid, visit_num):
+def create_s3_log_key(prefix, action, timestamp, adcid, project, ptid, visit_date):
     """Create a full S3 key for a log file.
 
     Args:
@@ -60,12 +60,12 @@ def create_s3_log_key(prefix, action, timestamp, adcid, project, ptid, visit_num
         adcid: Pipeline/center identifier
         project: Project label
         ptid: Participant ID
-        visit_num: Visit number
+        visit_date: Visit date in YYYY-MM-DD format
 
     Returns:
         str: Full S3 key path
     """
-    filename = create_log_filename(action, timestamp, adcid, project, ptid, visit_num)
+    filename = create_log_filename(action, timestamp, adcid, project, ptid, visit_date)
     return f"{prefix}{filename}"
 
 
@@ -767,7 +767,7 @@ class TestLambdaHandlerIncrementalRunScenario:
                     42,
                     "ingest-form-alpha",
                     "110002",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "submit",
@@ -794,7 +794,7 @@ class TestLambdaHandlerIncrementalRunScenario:
                     42,
                     "ingest-form-alpha",
                     "110003",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "submit",
@@ -942,7 +942,7 @@ class TestLambdaHandlerIncrementalRunScenario:
                     43,
                     "ingest-form-beta",
                     "110002",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "pass-qc",
@@ -968,7 +968,7 @@ class TestLambdaHandlerIncrementalRunScenario:
                     44,
                     "ingest-form-gamma",
                     "110003",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "submit",
@@ -1274,7 +1274,7 @@ class TestLambdaHandlerErrorHandling:
                 42,
                 "ingest-form-alpha",
                 "110001",
-                "01",
+                "2024-01-15",
             ),
             "content": {
                 "action": "submit",
@@ -1344,7 +1344,7 @@ class TestLambdaHandlerErrorHandling:
                     42,
                     "ingest-form-alpha",
                     "110001",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "submit",
@@ -1381,7 +1381,7 @@ class TestLambdaHandlerErrorHandling:
                     42,
                     "ingest-form-alpha",
                     "110001",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "pass-qc",
@@ -1463,7 +1463,7 @@ class TestLambdaHandlerErrorHandling:
                     42,
                     "ingest-form-alpha",
                     "110001",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "submit",
@@ -1591,7 +1591,7 @@ class TestLambdaHandlerErrorHandling:
                     42,
                     "ingest-form-alpha",
                     "110001",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "submit",
@@ -1623,7 +1623,7 @@ class TestLambdaHandlerErrorHandling:
                     42,
                     "ingest-form-alpha",
                     "110001",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "pass-qc",
@@ -1667,7 +1667,7 @@ class TestLambdaHandlerErrorHandling:
                     43,
                     "ingest-form-beta",
                     "110003",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "delete",
@@ -1785,7 +1785,7 @@ class TestLambdaHandlerErrorHandling:
                 42,
                 "ingest-form-alpha",
                 "110001",
-                "01",
+                "2024-01-15",
             ),
             "content": {
                 "action": "submit",
@@ -1849,7 +1849,7 @@ class TestLambdaHandlerErrorHandling:
                     42,
                     "ingest-form-alpha",
                     "110001",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": "{ invalid json without closing brace",
             },
@@ -1862,7 +1862,7 @@ class TestLambdaHandlerErrorHandling:
                     42,
                     "ingest-form-alpha",
                     "110002",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "invalid-action-type",  # This will cause validation error
@@ -1939,7 +1939,7 @@ class TestLambdaHandlerEndToEndIntegration:
                     42,
                     "ingest-form-alpha",
                     "110001",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "submit",
@@ -1965,7 +1965,7 @@ class TestLambdaHandlerEndToEndIntegration:
                     42,
                     "ingest-form-alpha",
                     "110001",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "pass-qc",
@@ -2031,7 +2031,7 @@ class TestLambdaHandlerEndToEndIntegration:
                     42,
                     "ingest-form-alpha",
                     "110001",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "submit",
@@ -2057,7 +2057,7 @@ class TestLambdaHandlerEndToEndIntegration:
                     42,
                     "ingest-form-alpha",
                     "110002",
-                    "01",
+                    "2024-01-15",
                 ),
                 "content": {
                     "action": "invalid-action",  # Invalid action
@@ -2127,7 +2127,7 @@ class TestLambdaHandlerEndToEndIntegration:
                     42,
                     "ingest-form-alpha",
                     "110003",
-                    "01",
+                    "2024-01-16",
                 ),
                 "content": {
                     "action": "submit",
