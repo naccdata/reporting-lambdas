@@ -7,8 +7,9 @@ using VisitEvent Pydantic model directly.
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import boto3
 from botocore.exceptions import ClientError
@@ -35,12 +36,15 @@ class S3EventRetriever:
         r"-\d{8}-\d{6}-\d+-[\w\-]+-[\w]+-\d{4}-\d{2}-\d{2}\.json$"
     )
 
+    DEFAULT_MAX_WORKERS = 50
+
     def __init__(
         self,
         bucket: str,
         prefix: str = "",
         since_timestamp: Optional[datetime] = None,
         file_pattern: Optional[re.Pattern] = None,
+        max_workers: Optional[int] = None,
     ):
         """Initialize with S3 bucket, optional prefix, and cutoff timestamp.
 
@@ -50,11 +54,14 @@ class S3EventRetriever:
             since_timestamp: Only retrieve events with timestamp > this value
             file_pattern: Optional regex pattern for matching files
                           (default DEFAULT_PATTERN)
+            max_workers: Max concurrent S3 fetch threads
+                         (default DEFAULT_MAX_WORKERS)
         """
         self.bucket = bucket
         self.prefix = prefix
         self.since_timestamp = since_timestamp
         self.file_pattern = file_pattern or self.DEFAULT_PATTERN
+        self.max_workers = max_workers or self.DEFAULT_MAX_WORKERS
 
     def list_event_files(self) -> List[str]:
         """List event files matching the configured pattern.
@@ -125,10 +132,45 @@ class S3EventRetriever:
         # Only process events with timestamp > since_timestamp
         return event.timestamp > self.since_timestamp
 
+    def _fetch_and_validate(self, key: str) -> Union[VisitEvent, dict[str, str]]:
+        """Fetch and validate a single event file from S3.
+
+        Thread-safe: creates its own S3 client per call.
+
+        Args:
+            key: S3 key of the event file
+
+        Returns:
+            VisitEvent on success, or error dict on failure
+        """
+        try:
+            visit_event = self.retrieve_event(key)
+            if not self.should_process_event(visit_event):
+                return {"source_key": key, "skipped": "true"}
+            return visit_event
+        except ClientError as e:
+            return {
+                "source_key": key,
+                "errors": f"S3 error: {e}",
+            }
+        except json.JSONDecodeError as e:
+            return {
+                "source_key": key,
+                "errors": f"JSON decode error: {e}",
+            }
+        except ValidationError as e:
+            return {
+                "source_key": key,
+                "errors": str(e.errors()),
+            }
+
     def retrieve_and_validate_events(
         self,
     ) -> Tuple[List[VisitEvent], List[dict[str, str]]]:
         """Retrieve all new event files, validate them, and return results.
+
+        Uses concurrent threads for parallel S3 fetches to handle
+        large file counts (20k+) within Lambda timeout limits.
 
         This method handles the complete retrieval and validation pipeline:
         - Lists event files matching the pattern
@@ -147,44 +189,34 @@ class S3EventRetriever:
             ClientError: If S3 listing fails
             (retrieval errors are collected, not raised)
         """
-        valid_events = []
-        validation_errors = []
+        valid_events: List[VisitEvent] = []
+        validation_errors: List[dict[str, str]] = []
 
         # List all matching event files
         try:
             event_files = self.list_event_files()
         except ClientError:
-            # Re-raise S3 listing errors as they prevent processing
             raise
 
-        # Process each file
-        for file_key in event_files:
-            try:
-                # Retrieve and validate event from S3
-                visit_event = self.retrieve_event(file_key)
+        if not event_files:
+            return valid_events, validation_errors
 
-                # Check if event should be processed based on timestamp
-                if not self.should_process_event(visit_event):
-                    continue
+        # Process files concurrently
+        with ThreadPoolExecutor(
+            max_workers=min(self.max_workers, len(event_files))
+        ) as executor:
+            future_to_key = {
+                executor.submit(self._fetch_and_validate, key): key
+                for key in event_files
+            }
 
-                valid_events.append(visit_event)
-
-            except ClientError as e:
-                # S3 access error - log and continue
-                validation_errors.append(
-                    {"source_key": file_key, "errors": f"S3 error: {e}"}
-                )
-
-            except json.JSONDecodeError as e:
-                # JSON parsing error - log and continue
-                validation_errors.append(
-                    {"source_key": file_key, "errors": f"JSON decode error: {e}"}
-                )
-
-            except ValidationError as e:
-                # Pydantic validation error - log and continue
-                validation_errors.append(
-                    {"source_key": file_key, "errors": str(e.errors())}
-                )
+            for future in as_completed(future_to_key):
+                result = future.result()
+                if isinstance(result, VisitEvent):
+                    valid_events.append(result)
+                elif isinstance(result, dict):
+                    if result.get("skipped") == "true":
+                        continue
+                    validation_errors.append(result)
 
         return valid_events, validation_errors
