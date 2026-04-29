@@ -1,7 +1,9 @@
 import os
 import time
-from typing import Any
+from datetime import datetime
+from typing import Any, Optional
 
+import boto3
 from aws_lambda_powertools import Logger, Metrics, Tracer
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from botocore.exceptions import ClientError
@@ -17,6 +19,56 @@ from checkpoint_lambda.s3_retriever import S3EventRetriever
 logger = Logger()
 tracer = Tracer()
 metrics = Metrics(namespace="EventLogCheckpoint")
+
+
+def _find_earliest_checkpoint_timestamp(
+    bucket: str,
+    checkpoint_prefix: str,
+) -> Optional[datetime]:
+    """Scan existing checkpoint files to find the earliest last-processed
+    timestamp.
+
+    This is used as a global cutoff for the S3 retriever so that
+    already-processed files are skipped at fetch time rather than
+    being downloaded and filtered per-group.
+
+    Args:
+        bucket: S3 bucket containing checkpoints
+        checkpoint_prefix: S3 prefix under which checkpoint parquets live
+
+    Returns:
+        The minimum last_processed_timestamp across all checkpoints,
+        or None if no checkpoints exist.
+    """
+    s3_client = boto3.client("s3")
+    paginator = s3_client.get_paginator("list_objects_v2")
+
+    earliest: Optional[datetime] = None
+
+    try:
+        for page in paginator.paginate(Bucket=bucket, Prefix=checkpoint_prefix):
+            if "Contents" not in page:
+                continue
+            for obj in page["Contents"]:
+                key = obj["Key"]
+                if not key.endswith(".parquet"):
+                    continue
+                try:
+                    store = CheckpointStore(bucket, key)
+                    checkpoint = store.load()
+                    if checkpoint is None:
+                        continue
+                    ts = checkpoint.get_last_processed_timestamp()
+                    if ts is not None and (earliest is None or ts < earliest):
+                        earliest = ts
+                except (CheckpointError, ClientError, OSError):
+                    # Skip unreadable checkpoints
+                    continue
+    except ClientError:
+        # If we can't list checkpoints, fall back to no filtering
+        return None
+
+    return earliest
 
 
 @tracer.capture_lambda_handler
@@ -96,11 +148,22 @@ def lambda_handler(  # noqa: C901
         },
     )
 
-    # Initialize S3EventRetriever (no timestamp filtering - we'll filter per group)
+    # Determine global cutoff timestamp from existing checkpoints
+    # This avoids fetching files that have already been processed
+    checkpoint_prefix = config.checkpoint_key_template.split("{")[0]
+    global_since = _find_earliest_checkpoint_timestamp(config.bucket, checkpoint_prefix)
+
+    if global_since:
+        logger.info(
+            "Using global timestamp cutoff for retrieval",
+            extra={"since_timestamp": global_since.isoformat()},
+        )
+
+    # Initialize S3EventRetriever with global timestamp cutoff
     event_retriever = S3EventRetriever(
         bucket=config.bucket,
         prefix=config.prefix,
-        since_timestamp=None,  # Retrieve all events, filter per group
+        since_timestamp=global_since,
     )
 
     # Retrieve and validate events
