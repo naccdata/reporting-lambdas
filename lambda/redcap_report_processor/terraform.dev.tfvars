@@ -6,6 +6,7 @@ environment = "dev"
 log_level   = "DEBUG"
 
 # S3 Configuration
+s3_bucket               = "nacc-reporting"
 s3_prefix               = "nacc-reporting/bronze-tables/redcap"
 region                  = "us-west-2"
 

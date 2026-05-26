@@ -6,13 +6,14 @@ environment = "staging"
 log_level   = "INFO"
 
 # S3 Configuration
+s3_bucket               = "nacc-reporting"
 s3_prefix               = "nacc-reporting/bronze-tables/redcap"
 region                  = "us-west-2"
 
 # Lambda Configuration
 lambda_timeout     = 900  # 15 minutes
 lambda_memory_size = 3008 # 3GB
-log_retention_days = 7    # Shorter retention for dev
+log_retention_days = 14
 
 # Layer Management
 # First deployment: create new layers
@@ -22,7 +23,7 @@ force_layer_update      = false
 
 # Tags
 additional_tags = {
-  Environment = "dev"
+  Environment = "staging"
   Owner       = "data-engineering"
   CostCenter  = "analytics"
   Application = "redcap-report-processor"
