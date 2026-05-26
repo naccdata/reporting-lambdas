@@ -1,7 +1,7 @@
 """REDCap report processor."""
 
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Union
 
 import boto3
@@ -65,7 +65,7 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
     Returns:
         Processing result with metrics
     """
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
 
     try:
         logger.info("Starting REDCap report processor")
@@ -96,7 +96,7 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
         # upload parquet to S3
         s3_manager.upload_parquet(df, event.s3_key)
 
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         return REDCapProcessingResult(
             start_time=start_time,
             end_time=end_time,
@@ -105,7 +105,7 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
         )
 
     except Exception as e:
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         logger.error(
             "REDCap report processing failed",
             extra={

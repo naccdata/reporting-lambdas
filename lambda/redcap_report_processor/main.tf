@@ -108,7 +108,7 @@ locals {
     aws_lambda_layer_version.data_processing[0].arn
   )
 
-  redcap_api_layer_arn = var.use_external_layer_arns ? var.external_layer_arns[1] : (
+  redcap_api_layer_arn = var.use_external_layer_arns ? var.external_layer_arns[2] : (
     var.reuse_existing_layers && length(data.aws_lambda_layer_version.redcap_api) > 0 && !var.force_layer_update ?
     data.aws_lambda_layer_version.redcap_api[0].arn :
     aws_lambda_layer_version.redcap_api[0].arn
@@ -161,8 +161,8 @@ resource "aws_iam_role_policy" "lambda_s3_policy" {
           "s3:ListBucket"
         ]
         Resource = [
-          "arn:aws:s3:::${var.s3_prefix}",
-          "arn:aws:s3:::${var.s3_prefix}/*"
+          "arn:aws:s3:::${var.s3_bucket}",
+          "arn:aws:s3:::${var.s3_bucket}/*"
         ]
       },
       {
@@ -173,8 +173,8 @@ resource "aws_iam_role_policy" "lambda_s3_policy" {
           "s3:DeleteObject"
         ]
         Resource = [
-          "arn:aws:s3:::${var.s3_prefix}",
-          "arn:aws:s3:::${var.s3_prefix}/*"
+          "arn:aws:s3:::${var.s3_bucket}",
+          "arn:aws:s3:::${var.s3_bucket}/*"
         ]
       }
     ]
@@ -216,7 +216,7 @@ resource "aws_iam_role_policy_attachment" "lambda_xray" {
 # CloudWatch log group
 resource "aws_cloudwatch_log_group" "lambda_logs" {
   name              = "/aws/lambda/redcap-report-processor-${var.environment}"
-  retention_in_days = 30
+  retention_in_days = var.log_retention_days
 
   tags = {
     Name        = "redcap-report-processor-logs"
@@ -268,6 +268,7 @@ resource "aws_lambda_function" "redcap_report_processor" {
     Project     = "redcap-report-processor"
   }
 }
+
 # Lambda alias for stable endpoint
 resource "aws_lambda_alias" "current" {
   name             = var.environment

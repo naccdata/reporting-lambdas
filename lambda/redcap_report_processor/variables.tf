@@ -2,8 +2,19 @@
 
 # Optional variables with defaults
 
+variable "s3_bucket" {
+  description = "S3 bucket name for report output"
+  type        = string
+  default     = "nacc-reporting"
+
+  validation {
+    condition     = length(var.s3_bucket) > 0
+    error_message = "S3 bucket cannot be empty."
+  }
+}
+
 variable "s3_prefix" {
-  description = "AWS S3 prefix to write to"
+  description = "AWS S3 prefix to write to (bucket/key-prefix)"
   type        = string
   default     = "nacc-reporting/bronze-tables/redcap"
 
