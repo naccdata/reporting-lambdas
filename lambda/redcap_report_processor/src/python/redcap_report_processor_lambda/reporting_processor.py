@@ -1,7 +1,7 @@
 """REDCap report processor."""
 
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Union
 
 import boto3
@@ -32,13 +32,14 @@ def get_redcap_records(
     Returns:
         CSV string of all records
     """
+    logger.info("Grabbing REDCap records...")
     ssm_client = boto3.client("ssm")
     raw_params = ssm_client.get_parameters_by_path(
         Path=parameter_path, WithDecryption=True, Recursive=True
     )
 
     parameters = {
-        x["Name"].split("/")[-1]: x["Value"] for x in raw_params["Parameters"]
+        x["Name"].split("/")[-1]: x["Value"].strip() for x in raw_params["Parameters"]
     }
 
     type_adapter = TypeAdapter(REDCapParameters)
@@ -64,7 +65,7 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
     Returns:
         Processing result with metrics
     """
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
 
     try:
         logger.info("Starting REDCap report processor")
@@ -85,7 +86,7 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
         records = get_redcap_records(event.parameter_path, event.report_id)
         # REDCap API returns str when exp_format="csv"
         assert isinstance(records, str), "Expected CSV string from REDCap API"
-        df_lazy = pl.scan_csv(io.StringIO(records))
+        df_lazy = pl.scan_csv(io.StringIO(records), infer_schema_length=10000)
         df = df_lazy.collect()
 
         if existing_df is not None:
@@ -95,7 +96,7 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
         # upload parquet to S3
         s3_manager.upload_parquet(df, event.s3_key)
 
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         return REDCapProcessingResult(
             start_time=start_time,
             end_time=end_time,
@@ -104,7 +105,7 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
         )
 
     except Exception as e:
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         logger.error(
             "REDCap report processing failed",
             extra={

@@ -1,52 +1,26 @@
 # Variables for REDCap Report Processor
 
-# Required variables
-variable "parameter_path" {
-  description = "AWS Parameter path to REDCap report credentials"
-  type        = string
-
-  validation {
-    condition     = length(var.parameter_path) > 0
-    error_message = "Parameter path cannot be empty."
-  }
-}
-
-variable "s3_postfix" {
-  description = "S3 postfix to write to; must contain parquet filename"
-  type        = string
-
-  validation {
-    condition     = length(var.s3_postfix) > 0
-    error_message = "S3 postfix cannot be empty."
-  }
-}
-
-variable "report_id" {
-  description = "The report ID to pull; if not provided, pulls all records from the project"
-  type        = string
-}
-
 # Optional variables with defaults
 
-variable "s3_prefix" {
-  description = "AWS S3 prefix to write to"
+variable "s3_bucket" {
+  description = "S3 bucket name for report output"
   type        = string
   default     = "nacc-reporting"
 
   validation {
-    condition     = length(var.s3_prefix) > 0
-    error_message = "S3 prefix cannot be empty."
+    condition     = length(var.s3_bucket) > 0
+    error_message = "S3 bucket cannot be empty."
   }
 }
 
-variable "mode" {
-  description = "If writing to an existing file, whether to overwrite or append"
+variable "s3_prefix" {
+  description = "AWS S3 prefix to write to (bucket/key-prefix)"
   type        = string
-  default     = "overwrite"
+  default     = "nacc-reporting/bronze-tables/redcap"
 
   validation {
-    condition     = contains(["overwrite", "append"], var.environment)
-    error_message = "Mode must be one of: overwrite, append."
+    condition     = length(var.s3_prefix) > 0
+    error_message = "S3 prefix cannot be empty."
   }
 }
 
@@ -96,19 +70,23 @@ variable "use_external_layer_arns" {
 }
 
 variable "external_layer_arns" {
-  description = "List of external layer ARNs to use when use_external_layer_arns is true. Must include: [powertools_arn, data_processing_arn]"
-  type        = list(string)
-  default     = []
+  description = "External layer ARNs keyed by layer name. Required when use_external_layer_arns is true."
+  type = object({
+    powertools      = string
+    data_processing = string
+    redcap_api      = string
+  })
+  default = null
 
   validation {
-    condition     = var.use_external_layer_arns ? length(var.external_layer_arns) >= 2 : true
-    error_message = "When use_external_layer_arns is true, external_layer_arns must contain at least 2 ARNs (powertools and data_processing layers)."
+    condition = var.use_external_layer_arns ? var.external_layer_arns != null : true
+    error_message = "When use_external_layer_arns is true, external_layer_arns must be provided with powertools, data_processing, and redcap_api ARNs."
   }
 
   validation {
-    condition = var.use_external_layer_arns ? alltrue([
-      for arn in var.external_layer_arns : can(regex("^arn:aws:lambda:[a-z0-9-]+:[0-9]+:layer:[a-zA-Z0-9-_]+:[0-9]+$", arn))
-    ]) : true
+    condition = var.external_layer_arns == null ? true : alltrue([
+      for arn in values(var.external_layer_arns) : can(regex("^arn:aws:lambda:[a-z0-9-]+:[0-9]+:layer:[a-zA-Z0-9-_]+:[0-9]+$", arn))
+    ])
     error_message = "All external layer ARNs must be valid Lambda layer ARNs."
   }
 }

@@ -62,6 +62,24 @@ output "data_processing_layer_version" {
   )
 }
 
+output "redcap_api_layer_arn" {
+  description = "ARN of the REDCap API layer"
+  value = var.use_external_layer_arns ? null : (
+    var.reuse_existing_layers && length(data.aws_lambda_layer_version.redcap_api) > 0 && !var.force_layer_update ?
+    data.aws_lambda_layer_version.redcap_api[0].arn :
+    length(aws_lambda_layer_version.redcap_api) > 0 ? aws_lambda_layer_version.redcap_api[0].arn : null
+  )
+}
+
+output "redcap_api_layer_version" {
+  description = "Version of the REDCap API layer"
+  value = var.use_external_layer_arns ? null : (
+    var.reuse_existing_layers && length(data.aws_lambda_layer_version.redcap_api) > 0 && !var.force_layer_update ?
+    data.aws_lambda_layer_version.redcap_api[0].version :
+    length(aws_lambda_layer_version.redcap_api) > 0 ? aws_lambda_layer_version.redcap_api[0].version : null
+  )
+}
+
 output "all_layer_arns" {
   description = "All layer ARNs used by the Lambda function"
   value       = local.layer_arns
@@ -134,9 +152,8 @@ output "layer_management_strategy" {
 output "deployment_info" {
   description = "Information about the deployment configuration"
   value = {
-    parameter_path = var.parameter_path
-    table_name     = var.table_name
-    output_prefix  = var.output_prefix
+    s3_prefix      = var.s3_prefix
+    region         = var.region
     environment    = var.environment
     log_level      = var.log_level
   }

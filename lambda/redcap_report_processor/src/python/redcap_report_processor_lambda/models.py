@@ -31,8 +31,8 @@ class REDCapProcessingInputEvent(BaseModel):
         default="nacc-reporting/bronze-tables/redcap",
         description="The S3 prefix to write to",
     )
-    environment: Literal["dev", "sandbox", "prod"] = Field(
-        default="prod", description="Environment name (sandbox, dev, prod)"
+    environment: Literal["dev", "staging", "prod"] = Field(
+        default="prod", description="Environment name (dev, staging, prod)"
     )
 
     mode: Literal["overwrite", "append"] = Field(
