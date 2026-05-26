@@ -12,9 +12,10 @@ terraform {
   }
 
   # Backend configuration for remote state management
+  # Use -backend-config at init time to set per-environment state key:
+  #   terraform init -backend-config="key=lambda/redcap-report-processor/${ENV}/terraform.tfstate"
   backend "s3" {
     bucket  = "nacc-terraform-state"
-    key     = "lambda/redcap-report-processor/terraform.tfstate"
     region  = "us-east-1"
     encrypt = true
 
@@ -272,13 +273,9 @@ resource "aws_lambda_function" "redcap_report_processor" {
 # Lambda alias for stable endpoint
 resource "aws_lambda_alias" "current" {
   name             = var.environment
-  description      = "Alias for ${var.environment} environment - points to current version"
+  description      = "Alias for ${var.environment} environment - points to latest deployed version"
   function_name    = aws_lambda_function.redcap_report_processor.function_name
   function_version = aws_lambda_function.redcap_report_processor.version
-
-  lifecycle {
-    ignore_changes = [function_version]
-  }
 }
 
 # CloudWatch alarms for monitoring
