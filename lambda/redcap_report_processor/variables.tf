@@ -70,19 +70,23 @@ variable "use_external_layer_arns" {
 }
 
 variable "external_layer_arns" {
-  description = "List of external layer ARNs to use when use_external_layer_arns is true. Must include: [powertools_arn, data_processing_arn, redcap_api_arn]"
-  type        = list(string)
-  default     = []
+  description = "External layer ARNs keyed by layer name. Required when use_external_layer_arns is true."
+  type = object({
+    powertools      = string
+    data_processing = string
+    redcap_api      = string
+  })
+  default = null
 
   validation {
-    condition     = var.use_external_layer_arns ? length(var.external_layer_arns) >= 3 : true
-    error_message = "When use_external_layer_arns is true, external_layer_arns must contain at least 3 ARNs (powertools, data_processing, and redcap_api layers)."
+    condition = var.use_external_layer_arns ? var.external_layer_arns != null : true
+    error_message = "When use_external_layer_arns is true, external_layer_arns must be provided with powertools, data_processing, and redcap_api ARNs."
   }
 
   validation {
-    condition = var.use_external_layer_arns ? alltrue([
-      for arn in var.external_layer_arns : can(regex("^arn:aws:lambda:[a-z0-9-]+:[0-9]+:layer:[a-zA-Z0-9-_]+:[0-9]+$", arn))
-    ]) : true
+    condition = var.external_layer_arns == null ? true : alltrue([
+      for arn in values(var.external_layer_arns) : can(regex("^arn:aws:lambda:[a-z0-9-]+:[0-9]+:layer:[a-zA-Z0-9-_]+:[0-9]+$", arn))
+    ])
     error_message = "All external layer ARNs must be valid Lambda layer ARNs."
   }
 }

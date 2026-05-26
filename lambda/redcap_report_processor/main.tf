@@ -96,26 +96,26 @@ resource "aws_lambda_layer_version" "redcap_api" {
 
 # Local values to determine which layer ARNs to use
 locals {
-  powertools_layer_arn = var.use_external_layer_arns ? var.external_layer_arns[0] : (
+  powertools_layer_arn = var.use_external_layer_arns ? var.external_layer_arns.powertools : (
     var.reuse_existing_layers && length(data.aws_lambda_layer_version.powertools) > 0 && !var.force_layer_update ?
     data.aws_lambda_layer_version.powertools[0].arn :
     aws_lambda_layer_version.powertools[0].arn
   )
 
-  data_processing_layer_arn = var.use_external_layer_arns ? var.external_layer_arns[1] : (
+  data_processing_layer_arn = var.use_external_layer_arns ? var.external_layer_arns.data_processing : (
     var.reuse_existing_layers && length(data.aws_lambda_layer_version.data_processing) > 0 && !var.force_layer_update ?
     data.aws_lambda_layer_version.data_processing[0].arn :
     aws_lambda_layer_version.data_processing[0].arn
   )
 
-  redcap_api_layer_arn = var.use_external_layer_arns ? var.external_layer_arns[2] : (
+  redcap_api_layer_arn = var.use_external_layer_arns ? var.external_layer_arns.redcap_api : (
     var.reuse_existing_layers && length(data.aws_lambda_layer_version.redcap_api) > 0 && !var.force_layer_update ?
     data.aws_lambda_layer_version.redcap_api[0].arn :
     aws_lambda_layer_version.redcap_api[0].arn
   )
 
   # Combine all layer ARNs
-  layer_arns = var.use_external_layer_arns ? var.external_layer_arns : [
+  layer_arns = var.use_external_layer_arns ? values(var.external_layer_arns) : [
     local.powertools_layer_arn,
     local.data_processing_layer_arn,
     local.redcap_api_layer_arn,
