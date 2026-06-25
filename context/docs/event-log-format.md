@@ -114,7 +114,7 @@ Each event file contains a single JSON object representing one visit event.
   "gear_name": "string",
   "ptid": "string",
   "visit_date": "string (ISO date)",
-  "visit_number": "string",
+  "visit_number": "string | null",
   "datatype": "string",
   "module": "string",
   "packet": "string | null",
@@ -133,11 +133,11 @@ Each event file contains a single JSON object representing one visit event.
 | `center_label` | string | Yes | Center/group label |
 | `gear_name` | string | Yes | Name of gear that logged the event (e.g., `"form-scheduler"`) |
 | `ptid` | string | Yes | Participant ID (max 10 characters, matches pattern `^[A-Z0-9]+$`) |
-| `visit_date` | string | Yes | Visit date in ISO format `YYYY-MM-DD` |
-| `visit_number` | string | Yes | Visit number (e.g., `"01"`, `"02"`) |
+| `visit_date` | string | Yes | Visit date in ISO format `YYYY-MM-DD`. Resolved from `visitdate` for most modules, or `npformdate` for NP modules. |
+| `visit_number` | string or null | No | Visit number (e.g., `"01"`, `"02"`). May be absent for unmatched submit events. |
 | `datatype` | string | Yes | Data type: `"form"`, `"dicom"`, etc. |
 | `module` | string | No | Module name for forms: `"UDS"`, `"FTLD"`, `"LBD"`, etc. (required when datatype=`"form"`) |
-| `packet` | string or null | No | Packet type: `"I"`, `"F"`, etc. (may be null) |
+| `packet` | string or null | No | Packet type: `"I"`, `"F"`, etc. May be null or absent for unmatched submit events. |
 | `timestamp` | string | Yes | ISO 8601 datetime when the action occurred (UTC) |
 
 ### Field Constraints
@@ -170,9 +170,12 @@ Each event file contains a single JSON object representing one visit event.
 #### visit_date
 - Format: `YYYY-MM-DD` (ISO 8601 date)
 - Example: `"2024-01-15"`
+- Source resolution: For most modules, resolved from the `visitdate` field in forms.json. For NP modules, resolved from the `npformdate` field instead.
+- Note: Because the source field may differ by module, the same logical visit may produce different `visit_date` values across event versions if the upstream resolution logic changes.
 
 #### visit_number
-- String representation of visit number
+- Optional: may be absent for submit events that could not be matched to a QC log file (e.g., legacy filename format without visitnum)
+- String representation of visit number when present
 - Examples: `"01"`, `"02"`, `"10"`
 - May include leading zeros
 
@@ -184,6 +187,11 @@ Each event file contains a single JSON object representing one visit event.
 - Required when `datatype="form"`
 - Common values: `"UDS"`, `"FTLD"`, `"LBD"`, `"FTLD-NP"`, `"FTLD-B"`
 - Uppercase
+
+#### packet
+- Optional: may be absent or null
+- Common values: `"I"` (initial), `"F"` (follow-up)
+- May be absent for submit events that could not be matched to a JSON file (serialized with `exclude_none=True`)
 
 #### timestamp
 - Format: ISO 8601 datetime with timezone
@@ -383,6 +391,19 @@ For a visit with QC alerts that are later approved:
 - Not all visits will have both `submit` and outcome events in the same job
 - Re-evaluated visits may only have outcome events
 - Early pipeline failures may not generate events (no JSON file = no visit metadata)
+
+### Optional Fields in Submit Events
+
+- Submit events that could not be matched to a JSON file (unmatched submits) may lack `packet` and `visit_number` fields entirely
+- These fields are serialized with `exclude_none=True`, so they will be absent from the JSON payload rather than present as null
+- Consumers must treat `packet` and `visit_number` as optional when processing submit events
+
+### Visit Date Resolution
+
+- For most modules, `visit_date` is resolved from the `visitdate` field in forms.json
+- For NP modules, `visit_date` is resolved from the `npformdate` field instead
+- Because the S3 filename includes `visit_date`, a change in date resolution logic (e.g., switching from `visitdate` to `npformdate`) may cause the same logical visit to appear under a different S3 key
+- Consumers should be aware that this can result in what appears to be a "new" event for a visit that was already processed under a different date
 
 ### Timestamp Interpretation
 
@@ -586,7 +607,6 @@ Consumers should validate event files against this JSON schema:
     "gear_name",
     "ptid",
     "visit_date",
-    "visit_number",
     "datatype",
     "timestamp"
   ],
@@ -626,7 +646,7 @@ Consumers should validate event files against this JSON schema:
       "format": "date"
     },
     "visit_number": {
-      "type": "string",
+      "type": ["string", "null"],
       "minLength": 1
     },
     "datatype": {
