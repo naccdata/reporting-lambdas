@@ -6,6 +6,7 @@ Pydantic model directly.
 """
 
 import json
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -16,6 +17,8 @@ from botocore.exceptions import ClientError
 from pydantic import ValidationError
 
 from checkpoint_lambda.models import VisitEvent
+
+logger = logging.getLogger(__name__)
 
 
 class S3EventRetriever:
@@ -37,7 +40,6 @@ class S3EventRetriever:
     )
 
     DEFAULT_MAX_WORKERS = 50
-    DEFAULT_MAX_FILES = 5000
 
     def __init__(
         self,
@@ -58,29 +60,29 @@ class S3EventRetriever:
                           (default DEFAULT_PATTERN)
             max_workers: Max concurrent S3 fetch threads
                          (default DEFAULT_MAX_WORKERS)
-            max_files: Max number of files to retrieve per invocation
-                       (default DEFAULT_MAX_FILES). Limits work per run
-                       so the lambda makes incremental progress within
-                       its timeout.
+            max_files: Max number of files to retrieve per invocation.
+                       None means no cap (all matching files are returned).
+                       Use to limit work per run so the lambda makes
+                       incremental progress within its timeout.
         """
         self.bucket = bucket
         self.prefix = prefix
         self.since_timestamp = since_timestamp
         self.file_pattern = file_pattern or self.DEFAULT_PATTERN
         self.max_workers = max_workers or self.DEFAULT_MAX_WORKERS
-        self.max_files = max_files or self.DEFAULT_MAX_FILES
+        self.max_files = max_files
 
     def list_event_files(self) -> List[str]:
         """List event files matching the configured pattern.
 
         Paginates through S3 results, filtering by the file pattern and
         by S3 LastModified date when a since_timestamp is configured.
-        Stops after collecting max_files matching files to bound work
-        per invocation.
+        Stops after collecting max_files matching files (when configured)
+        to bound work per invocation.
 
         Returns:
             List of S3 keys matching the configured file pattern,
-            up to max_files entries
+            up to max_files entries if a cap is configured
 
         Raises:
             ClientError: If S3 access fails
@@ -113,7 +115,15 @@ class S3EventRetriever:
 
                 matching_files.append(key)
 
-                if len(matching_files) >= self.max_files:
+                if self.max_files is not None and len(matching_files) >= self.max_files:
+                    logger.warning(
+                        "File cap reached; more files may remain unprocessed",
+                        extra={
+                            "max_files": self.max_files,
+                            "bucket": self.bucket,
+                            "prefix": self.prefix,
+                        },
+                    )
                     return matching_files
 
         return matching_files
