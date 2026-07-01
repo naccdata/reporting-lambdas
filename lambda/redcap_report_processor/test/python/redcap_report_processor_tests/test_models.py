@@ -20,14 +20,14 @@ class TestREDCapProcessingInputEvent:
         assert valid_input.report_id == "123"
         assert valid_input.s3_suffix == "testing/file.parquet"
         assert valid_input.s3_prefix == "dummy-bucket/redcap"
-        assert valid_input.environment == "sandbox"
+        assert valid_input.environment == "dev"
         assert valid_input.mode == "overwrite"
         assert valid_input.region == "us-west-2"
 
         # generated properties
-        assert valid_input.s3_uri == "dummy-bucket/redcap/sandbox/testing/file.parquet"
+        assert valid_input.s3_uri == "dummy-bucket/redcap/dev/testing/file.parquet"
         assert valid_input.s3_bucket == "dummy-bucket"
-        assert valid_input.s3_key == "redcap/sandbox/testing/file.parquet"
+        assert valid_input.s3_key == "redcap/dev/testing/file.parquet"
 
     def test_input_event_serialization(self, valid_input):
         """Test InputEvent JSON serialization."""
@@ -40,7 +40,7 @@ class TestREDCapProcessingInputEvent:
         assert parsed["report_id"] == "123"
         assert parsed["s3_suffix"] == "testing/file.parquet"
         assert parsed["s3_prefix"] == "dummy-bucket/redcap"
-        assert parsed["environment"] == "sandbox"
+        assert parsed["environment"] == "dev"
         assert parsed["mode"] == "overwrite"
         assert parsed["region"] == "us-west-2"
 
