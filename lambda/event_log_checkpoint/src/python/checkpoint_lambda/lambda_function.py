@@ -159,11 +159,17 @@ def lambda_handler(  # noqa: C901
             extra={"since_timestamp": global_since.isoformat()},
         )
 
-    # Initialize S3EventRetriever with global timestamp cutoff
+    # Initialize S3EventRetriever with global timestamp cutoff.
+    # MAX_FILES caps the number of files retrieved per invocation so the
+    # lambda makes incremental progress within its timeout.
+    max_files_env = os.environ.get("MAX_FILES_PER_RUN")
+    max_files = int(max_files_env) if max_files_env else None
+
     event_retriever = S3EventRetriever(
         bucket=config.bucket,
         prefix=config.prefix,
         since_timestamp=global_since,
+        max_files=max_files,
     )
 
     # Retrieve and validate events
