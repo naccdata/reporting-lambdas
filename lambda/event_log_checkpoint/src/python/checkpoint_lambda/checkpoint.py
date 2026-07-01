@@ -7,8 +7,9 @@ data and provides operations for working with event collections.
 from datetime import datetime
 from typing import List, Optional
 
-from checkpoint_lambda.models import VisitEvent
 from polars import DataFrame, Datetime, Int32, Utf8, col, concat
+
+from checkpoint_lambda.models import VisitEvent
 
 IDENTITY_COLUMNS: list[str] = [
     "action",
