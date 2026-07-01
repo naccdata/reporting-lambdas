@@ -299,25 +299,11 @@ def lambda_handler(  # noqa: C901
             checkpoint_store = CheckpointStore(config.bucket, checkpoint_key)
 
             # Load existing checkpoint
-            try:
-                checkpoint = checkpoint_store.get_checkpoint()
-                since_timestamp = checkpoint.get_last_processed_timestamp()
+            checkpoint = checkpoint_store.get_checkpoint()
 
-                # Filter events by timestamp for incremental processing
-                new_events = (
-                    [e for e in events if e.timestamp > since_timestamp]
-                    if since_timestamp
-                    else events
-                )
-
-            except CheckpointError:
-                # No existing checkpoint - process all events
-                checkpoint = checkpoint_store.get_checkpoint()
-                new_events = events
-
-            # Merge new events if any
-            if new_events:
-                updated_checkpoint = checkpoint.add_events(new_events)
+            # Merge all events - deduplication happens inside add_events
+            if events:
+                updated_checkpoint = checkpoint.add_events(events)
 
                 # Save updated checkpoint
                 checkpoint_store.save(updated_checkpoint)
@@ -330,7 +316,7 @@ def lambda_handler(  # noqa: C901
                         "datatype": datatype,
                         "checkpoint_key": checkpoint_key,
                         "event_count": updated_checkpoint.get_event_count(),
-                        "new_events_added": len(new_events),
+                        "new_events_added": len(events),
                     },
                 )
 
@@ -340,7 +326,7 @@ def lambda_handler(  # noqa: C901
                 metrics.add_metric(
                     name="EventsProcessedByStudyDatatype",
                     unit="Count",
-                    value=len(new_events),
+                    value=len(events),
                 )
                 metrics.add_metric(
                     name="CheckpointsSaved",
@@ -352,7 +338,7 @@ def lambda_handler(  # noqa: C901
                     {
                         "study": study,
                         "datatype": datatype,
-                        "events": len(new_events),
+                        "events": len(events),
                         "checkpoint_key": checkpoint_key,
                     }
                 )

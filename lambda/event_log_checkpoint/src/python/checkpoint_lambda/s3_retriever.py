@@ -1,8 +1,8 @@
 """S3 event retriever for processing event log files.
 
 This module contains the S3EventRetriever class that handles S3
-operations for event log retrieval, timestamp filtering, and validation
-using VisitEvent Pydantic model directly.
+operations for event log retrieval and validation using VisitEvent
+Pydantic model directly.
 """
 
 import json
@@ -24,7 +24,6 @@ class S3EventRetriever:
     This repository handles:
     - Listing event files matching the configured pattern
     - Retrieving and validating events as VisitEvent domain objects
-    - Filtering events by timestamp for incremental processing
     - Collecting validation errors for logging
     - Limiting files per invocation to ensure progress within timeouts
     """
@@ -105,7 +104,7 @@ class S3EventRetriever:
                 # the event it contains occurred, so LastModified is
                 # always >= the event timestamp inside.  We use strict
                 # less-than so boundary cases are still downloaded and
-                # validated by should_process_event after parsing.
+                # validated after parsing.
                 if self.since_timestamp is not None:
                     last_modified = obj["LastModified"]
                     # LastModified is timezone-aware (UTC) from boto3
@@ -145,22 +144,6 @@ class S3EventRetriever:
         # Validate and return VisitEvent object
         return VisitEvent.model_validate(event_data)
 
-    def should_process_event(self, event: VisitEvent) -> bool:
-        """Determine if event should be processed based on timestamp.
-
-        Args:
-            event: VisitEvent object
-
-        Returns:
-            True if event should be processed (timestamp > since_timestamp or no filter)
-        """
-        # If no timestamp filter is set, process all events
-        if self.since_timestamp is None:
-            return True
-
-        # Only process events with timestamp > since_timestamp
-        return event.timestamp > self.since_timestamp
-
     def _fetch_and_validate(self, key: str) -> Union[VisitEvent, dict[str, str]]:
         """Fetch and validate a single event file from S3.
 
@@ -173,10 +156,7 @@ class S3EventRetriever:
             VisitEvent on success, or error dict on failure
         """
         try:
-            visit_event = self.retrieve_event(key)
-            if not self.should_process_event(visit_event):
-                return {"source_key": key, "skipped": "true"}
-            return visit_event
+            return self.retrieve_event(key)
         except ClientError as e:
             return {
                 "source_key": key,
@@ -204,7 +184,6 @@ class S3EventRetriever:
         This method handles the complete retrieval and validation pipeline:
         - Lists event files matching the pattern
         - Retrieves and validates each file as VisitEvent objects
-        - Filters by timestamp if since_timestamp is set
         - Collects validation errors for logging
 
         Returns:
@@ -244,8 +223,6 @@ class S3EventRetriever:
                 if isinstance(result, VisitEvent):
                     valid_events.append(result)
                 elif isinstance(result, dict):
-                    if result.get("skipped") == "true":
-                        continue
                     validation_errors.append(result)
 
         return valid_events, validation_errors

@@ -53,31 +53,31 @@ Replace timestamp-based event filtering with content-based deduplication in the 
     - **Validates: Requirements 7.1, 7.2, 7.3**
     - For any non-empty checkpoint, get_last_processed_timestamp() returns the maximum timestamp; for empty, returns None; value never decreases after merge
 
-- [~] 2. Checkpoint - Ensure all tests pass
+- [x] 2. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 3. Remove timestamp filters
-  - [~] 3.1 Remove should_process_event from S3EventRetriever
+- [x] 3. Remove timestamp filters
+  - [x] 3.1 Remove should_process_event from S3EventRetriever
     - Delete the `should_process_event` method from `s3_retriever.py`
     - Update `_fetch_and_validate` to return validated VisitEvent directly without calling `should_process_event`
     - Remove the "skipped" result path from `_fetch_and_validate`
     - Update `retrieve_and_validate_events` to remove handling of the "skipped" dict result
     - _Requirements: 4.1, 4.2, 4.3_
 
-  - [~] 3.2 Remove per-group timestamp filter from lambda handler
+  - [x] 3.2 Remove per-group timestamp filter from lambda handler
     - In `lambda_function.py`, remove the per-group block that filters events by `timestamp > since_timestamp`
     - Pass all group events directly to `checkpoint.add_events(events)`
     - Remove the `since_timestamp` variable and the conditional list comprehension
     - Keep the `_find_earliest_checkpoint_timestamp` function (used for S3 LastModified pre-filter)
     - _Requirements: 3.1, 3.2, 3.3_
 
-  - [~] 3.3 Write unit tests for filter removal
+  - [x] 3.3 Write unit tests for filter removal
     - Verify `S3EventRetriever` no longer has `should_process_event` method
     - Verify `_fetch_and_validate` returns VisitEvent for valid events without filtering
     - Verify S3 LastModified pre-filter in `list_event_files` is retained and functioning
     - _Requirements: 4.1, 4.2, 4.3, 5.1, 5.2, 5.3, 5.4_
 
-- [~] 4. Filter removal checkpoint - Ensure all tests pass
+- [x] 4. Filter removal checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. Integration tests for backfill scenarios
