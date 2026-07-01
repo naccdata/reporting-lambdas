@@ -12,7 +12,7 @@ def valid_event():
         "report_id": "123",
         "s3_suffix": "testing/file.parquet",
         "s3_prefix": "dummy-bucket/redcap/",
-        "environment": "sandbox",
+        "environment": "dev",
         "mode": "overwrite",
         "region": "us-west-2",
         "log_level": "INFO",
