@@ -80,8 +80,8 @@ Replace timestamp-based event filtering with content-based deduplication in the 
 - [x] 4. Filter removal checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Integration tests for backfill scenarios
-  - [~] 5.1 Write integration test for backfilled events
+- [x] 5. Integration tests for backfill scenarios
+  - [x] 5.1 Write integration test for backfilled events
     - Test end-to-end lambda invocation with events that have old timestamps
     - Verify backfilled events appear in the checkpoint after processing
     - Use mocked S3 (moto) for realistic integration testing
@@ -92,12 +92,12 @@ Replace timestamp-based event filtering with content-based deduplication in the 
     - Verify checkpoint size does not grow when all events are duplicates
     - _Requirements: 2.2, 2.6_
 
-  - [~] 5.3 Write integration test for correction events
+  - [x] 5.3 Write integration test for correction events
     - Test lambda invocation with correction events (same identity, different non-identity fields)
     - Verify old versions are replaced by new versions in the checkpoint
     - _Requirements: 2.3_
 
-- [~] 6. Final checkpoint - Ensure all tests pass
+- [x] 6. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
