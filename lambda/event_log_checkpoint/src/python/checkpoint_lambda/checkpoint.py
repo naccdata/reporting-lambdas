@@ -97,9 +97,9 @@ class Checkpoint:
             Checkpoint instance with events converted to DataFrame
         """
         df = events_to_dataframe(events)
-        # Sort by timestamp to ensure consistent ordering
+        # Deterministic sort matching add_events ordering
         if not df.is_empty():
-            df = df.sort("timestamp")
+            df = df.sort(["timestamp", "ptid", "action"])
         return cls(df)
 
     @classmethod
