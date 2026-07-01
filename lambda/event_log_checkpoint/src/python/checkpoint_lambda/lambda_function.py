@@ -114,10 +114,12 @@ def lambda_handler(  # noqa: C901
 
     # Load configuration from environment variables
     try:
+        max_files_env = os.environ.get("MAX_FILES_PER_RUN")
         config = LambdaConfig(
             bucket=os.environ.get("BUCKET", ""),
             prefix=os.environ.get("PREFIX", ""),
             checkpoint_key_template=os.environ.get("CHECKPOINT_KEY_TEMPLATE", ""),
+            max_files_per_run=int(max_files_env) if max_files_env else None,
         )
         # Validate template has required placeholders
         config.validate_template()
@@ -160,16 +162,13 @@ def lambda_handler(  # noqa: C901
         )
 
     # Initialize S3EventRetriever with global timestamp cutoff.
-    # MAX_FILES caps the number of files retrieved per invocation so the
-    # lambda makes incremental progress within its timeout.
-    max_files_env = os.environ.get("MAX_FILES_PER_RUN")
-    max_files = int(max_files_env) if max_files_env else None
-
+    # max_files_per_run caps the number of files retrieved per invocation
+    # so the lambda makes incremental progress within its timeout.
     event_retriever = S3EventRetriever(
         bucket=config.bucket,
         prefix=config.prefix,
         since_timestamp=global_since,
-        max_files=max_files,
+        max_files=config.max_files_per_run,
     )
 
     # Retrieve and validate events
@@ -303,7 +302,9 @@ def lambda_handler(  # noqa: C901
 
             # Merge all events - deduplication happens inside add_events
             if events:
+                previous_count = checkpoint.get_event_count()
                 updated_checkpoint = checkpoint.add_events(events)
+                events_added = updated_checkpoint.get_event_count() - previous_count
 
                 # Save updated checkpoint
                 checkpoint_store.save(updated_checkpoint)
@@ -316,7 +317,8 @@ def lambda_handler(  # noqa: C901
                         "datatype": datatype,
                         "checkpoint_key": checkpoint_key,
                         "event_count": updated_checkpoint.get_event_count(),
-                        "new_events_added": len(events),
+                        "events_merged": len(events),
+                        "events_added": events_added,
                     },
                 )
 
@@ -329,6 +331,11 @@ def lambda_handler(  # noqa: C901
                     value=len(events),
                 )
                 metrics.add_metric(
+                    name="EventsAddedByStudyDatatype",
+                    unit="Count",
+                    value=events_added,
+                )
+                metrics.add_metric(
                     name="CheckpointsSaved",
                     unit="Count",
                     value=1,
@@ -338,7 +345,8 @@ def lambda_handler(  # noqa: C901
                     {
                         "study": study,
                         "datatype": datatype,
-                        "events": len(events),
+                        "events_merged": len(events),
+                        "events_added": events_added,
                         "checkpoint_key": checkpoint_key,
                     }
                 )
