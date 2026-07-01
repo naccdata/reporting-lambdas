@@ -79,6 +79,7 @@ def add_events(self, new_events: List[VisitEvent]) -> "Checkpoint":
             new_df.select(IDENTITY_COLUMNS).unique(),
             on=IDENTITY_COLUMNS,
             how="anti",
+            nulls_equal=True,
         )
         # Combine preserved existing + deduplicated new
         merged_df = concat([preserved_df, new_df])
@@ -92,7 +93,7 @@ def add_events(self, new_events: List[VisitEvent]) -> "Checkpoint":
 **Key design decisions**:
 - **Anti-join for upsert**: Using `anti` join is O(n) via hash join in Polars, much faster than row-by-row comparison. This naturally handles both true duplicates (skipped because new batch's version replaces) and corrections (new version replaces old).
 - **`keep="last"` for internal dedup**: When the new batch has internal duplicates (same identity), the last occurrence in the original list order wins. Polars `unique(keep="last")` preserves the last row in DataFrame order, which matches list insertion order from `events_to_dataframe`.
-- **Null handling for module**: Polars' join semantics treat null == null as matching by default in `join` operations when using `join_nulls=True`. We need to enable this for the module column since non-form datatypes have null module.
+- **Null handling for module**: Polars' join semantics treat null == null as matching by default in `join` operations when using `nulls_equal=True`. We need to enable this for the module column since non-form datatypes have null module.
 
 ### 2. S3EventRetriever (Modified)
 
@@ -260,7 +261,7 @@ When `new_events` is an empty list, `add_events` returns a clone of the current 
 
 ### Polars Join Null Semantics
 
-Polars' `join` operation requires explicit `join_nulls=True` to match null values in the `module` column. Without this, events with null modules would never match existing null-module events, causing false "new event" detection and data duplication. The implementation must pass `join_nulls=True` to the anti-join.
+Polars' `join` operation requires explicit `nulls_equal=True` to match null values in the `module` column. Without this, events with null modules would never match existing null-module events, causing false "new event" detection and data duplication. The implementation must pass `nulls_equal=True` to the anti-join.
 
 ### Concurrent Lambda Invocations
 
