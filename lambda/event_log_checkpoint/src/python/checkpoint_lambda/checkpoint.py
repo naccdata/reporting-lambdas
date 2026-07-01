@@ -7,9 +7,18 @@ data and provides operations for working with event collections.
 from datetime import datetime
 from typing import List, Optional
 
+from checkpoint_lambda.models import VisitEvent
 from polars import DataFrame, Datetime, Int32, Utf8, col, concat
 
-from checkpoint_lambda.models import VisitEvent
+IDENTITY_COLUMNS: list[str] = [
+    "action",
+    "ptid",
+    "visit_date",
+    "timestamp",
+    "datatype",
+    "module",
+    "pipeline_adcid",
+]
 
 
 def create_checkpoint_dataframe() -> DataFrame:
@@ -115,36 +124,43 @@ class Checkpoint:
         return max_timestamp
 
     def add_events(self, new_events: List[VisitEvent]) -> "Checkpoint":
-        """Create new checkpoint with additional events merged in.
+        """Create new checkpoint with additional events merged using content-
+        based upsert.
 
-        This method handles the merging logic internally:
-        - Converts new events to DataFrame
-        - Merges with existing events
-        - Sorts by timestamp
-        - Returns new Checkpoint instance
+        Deduplication is based on event identity fields. New events with
+        matching identity replace existing events (upsert semantics).
+        Internal batch duplicates keep only the last occurrence.
 
         Args:
             new_events: List of new validated events to add
 
         Returns:
-            New checkpoint instance with merged events, sorted by timestamp
+            New checkpoint instance with merged events, sorted by
+            (timestamp, ptid, action)
         """
         if not new_events:
-            # No new events, return copy of current checkpoint
             return Checkpoint(self._events_df.clone())
 
-        # Convert new events to DataFrame
-        new_events_df = events_to_dataframe(new_events)
+        new_df = events_to_dataframe(new_events)
 
-        # Merge with existing events
-        merged_df = (
-            new_events_df
-            if self.is_empty()
-            else concat([self._events_df, new_events_df])
-        )
+        # Internal batch dedup: keep last occurrence
+        new_df = new_df.unique(subset=IDENTITY_COLUMNS, keep="last")
 
-        # Sort by timestamp
-        merged_df = merged_df.sort("timestamp")
+        if self.is_empty():
+            merged_df = new_df
+        else:
+            # Keep existing events whose identity is NOT in new batch
+            preserved_df = self._events_df.join(
+                new_df.select(IDENTITY_COLUMNS).unique(),
+                on=IDENTITY_COLUMNS,
+                how="anti",
+                nulls_equal=True,
+            )
+            # Combine preserved existing + deduplicated new
+            merged_df = concat([preserved_df, new_df])
+
+        # Deterministic sort
+        merged_df = merged_df.sort(["timestamp", "ptid", "action"])
 
         return Checkpoint(merged_df)
 
