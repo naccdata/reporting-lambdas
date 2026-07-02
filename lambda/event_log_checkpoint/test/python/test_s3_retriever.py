@@ -8,7 +8,7 @@ and error handling scenarios using moto.server for realistic S3 testing.
 import json
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
@@ -273,99 +273,6 @@ class TestRetrieveEvent:
             retriever.retrieve_event(key)
 
 
-class TestShouldProcessEvent:
-    """Test should_process_event method."""
-
-    def test_should_process_event_no_timestamp_filter(self):
-        """Test processing when no timestamp filter is set."""
-        retriever = S3EventRetriever("test-bucket")
-
-        event = VisitEvent(
-            action="submit",
-            study="adrc",
-            pipeline_adcid=123,
-            project_label="test_project",
-            center_label="test_center",
-            gear_name="test_gear",
-            ptid="ABC123",
-            visit_date="2024-01-15",
-            datatype="form",
-            module="UDS",
-            timestamp=datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-        )
-
-        assert retriever.should_process_event(event) is True
-
-    def test_should_process_event_newer_than_filter(self):
-        """Test processing event newer than filter timestamp."""
-        filter_timestamp = datetime(2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
-        retriever = S3EventRetriever("test-bucket", since_timestamp=filter_timestamp)
-
-        event = VisitEvent(
-            action="submit",
-            study="adrc",
-            pipeline_adcid=123,
-            project_label="test_project",
-            center_label="test_center",
-            gear_name="test_gear",
-            ptid="ABC123",
-            visit_date="2024-01-15",
-            datatype="form",
-            module="UDS",
-            timestamp=datetime(
-                2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc
-            ),  # 1 hour later
-        )
-
-        assert retriever.should_process_event(event) is True
-
-    def test_should_process_event_older_than_filter(self):
-        """Test skipping event older than filter timestamp."""
-        filter_timestamp = datetime(2024, 1, 15, 11, 0, 0, tzinfo=timezone.utc)
-        retriever = S3EventRetriever("test-bucket", since_timestamp=filter_timestamp)
-
-        event = VisitEvent(
-            action="submit",
-            study="adrc",
-            pipeline_adcid=123,
-            project_label="test_project",
-            center_label="test_center",
-            gear_name="test_gear",
-            ptid="ABC123",
-            visit_date="2024-01-15",
-            datatype="form",
-            module="UDS",
-            timestamp=datetime(
-                2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc
-            ),  # 1 hour earlier
-        )
-
-        assert retriever.should_process_event(event) is False
-
-    def test_should_process_event_equal_to_filter(self):
-        """Test skipping event equal to filter timestamp."""
-        filter_timestamp = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
-        retriever = S3EventRetriever("test-bucket", since_timestamp=filter_timestamp)
-
-        event = VisitEvent(
-            action="submit",
-            study="adrc",
-            pipeline_adcid=123,
-            project_label="test_project",
-            center_label="test_center",
-            gear_name="test_gear",
-            ptid="ABC123",
-            visit_date="2024-01-15",
-            datatype="form",
-            module="UDS",
-            timestamp=datetime(
-                2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc
-            ),  # Exactly equal
-        )
-
-        assert retriever.should_process_event(event) is False
-
-
 class TestRetrieveAndValidateEvents:
     """Test retrieve_and_validate_events method."""
 
@@ -482,10 +389,10 @@ class TestRetrieveAndValidateEvents:
         assert validation_errors[0]["source_key"] == INVALID_CONTENT_LOG
         assert "errors" in validation_errors[0]
 
-    def test_retrieve_and_validate_events_with_timestamp_filtering(
+    def test_retrieve_and_validate_events_no_timestamp_filtering(
         self, s3_client, setup_s3_environment
     ):
-        """Test timestamp filtering during event processing."""
+        """Test that all events are returned regardless of timestamp."""
         bucket = "test-bucket-validate-timestamp"
 
         # Create bucket
@@ -532,15 +439,17 @@ class TestRetrieveAndValidateEvents:
             Body=json.dumps(event_data_2).encode(),
         )
 
-        # Set timestamp filter to only process events after the first event
+        # Set timestamp filter - events are no longer filtered by timestamp
         filter_timestamp = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
         retriever = S3EventRetriever(bucket, since_timestamp=filter_timestamp)
         valid_events, validation_errors = retriever.retrieve_and_validate_events()
 
-        # Only the second event should be processed
-        assert len(valid_events) == 1
+        # Both events should be returned (no per-event timestamp filter)
+        assert len(valid_events) == 2
         assert len(validation_errors) == 0
-        assert valid_events[0].action == "pass-qc"
+        actions = {event.action for event in valid_events}
+        assert "submit" in actions
+        assert "pass-qc" in actions
 
     def test_retrieve_and_validate_events_with_retrieval_errors(
         self, s3_client, setup_s3_environment
@@ -820,83 +729,6 @@ class TestS3EventRetrieverPropertyTests:
         assert result.pipeline_adcid == event_data["pipeline_adcid"]
         assert result.ptid == event_data["ptid"]
 
-    # Feature: event-log-scraper, Property 3: Timestamp filtering correctness
-    @given(
-        bucket_name=st.text(
-            alphabet="abcdefghijklmnopqrstuvwxyz0123456789-", min_size=3, max_size=20
-        ).filter(lambda x: x[0].isalnum() and x[-1].isalnum() and "--" not in x),
-        cutoff_timestamp=st.datetimes(
-            min_value=datetime(2020, 1, 1),  # Naive datetime
-            max_value=datetime(2030, 12, 31),  # Naive datetime
-        ).map(
-            lambda dt: dt.replace(tzinfo=timezone.utc)
-        ),  # Add timezone after generation
-        # Generate VisitEvent objects instead of raw dictionaries
-        events=st.lists(
-            st.builds(
-                lambda action, offset_hours: VisitEvent(
-                    action=action,
-                    study="adrc",
-                    pipeline_adcid=123,
-                    project_label="test_project",
-                    center_label="test_center",
-                    gear_name="test_gear",
-                    ptid="ABC123",
-                    visit_date="2024-01-15",
-                    datatype="form",
-                    module="UDS",
-                    timestamp=datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
-                    + timedelta(hours=offset_hours),
-                ),
-                action=st.sampled_from(["submit", "pass-qc", "not-pass-qc", "delete"]),
-                offset_hours=st.integers(min_value=-24, max_value=24),
-            ),
-            min_size=0,
-            max_size=5,  # Reduced for performance
-        ),
-    )
-    @settings(max_examples=5, deadline=None)  # Reduced examples for speed
-    def test_timestamp_filtering_correctness(
-        self, bucket_name, cutoff_timestamp, events
-    ):
-        """Property test: For any cutoff timestamp and collection of events,
-        the retrieval system should process only events with timestamp strictly
-        greater than the cutoff timestamp.
-
-        This test validates Requirements 1.1 and 7.4: the system should
-        filter events by timestamp to support incremental processing and
-        preserve event ordering based on timestamp values.
-        """
-        # Create retriever with timestamp filter
-        retriever = S3EventRetriever(bucket_name, since_timestamp=cutoff_timestamp)
-
-        # Test each event individually
-        for event in events:
-            # Determine expected result
-            should_process_expected = event.timestamp > cutoff_timestamp
-
-            # Test the actual method
-            should_process_actual = retriever.should_process_event(event)
-
-            # Verify the filtering is correct
-            assert should_process_actual == should_process_expected, (
-                f"Event with timestamp {event.timestamp} should be "
-                f"{'processed' if should_process_expected else 'filtered out'} "
-                f"when cutoff is {cutoff_timestamp}, "
-                f"but got {should_process_actual}"
-            )
-
-        # Test the case with no timestamp filter (should process all events)
-        retriever_no_filter = S3EventRetriever(bucket_name, since_timestamp=None)
-
-        for event in events:
-            should_process_no_filter = retriever_no_filter.should_process_event(event)
-            # When no filter is set, all events should be processed
-            assert should_process_no_filter is True, (
-                f"Event should be processed when no timestamp filter is set, "
-                f"but got {should_process_no_filter}"
-            )
-
     # Feature: event-log-scraper, Property 4: Error resilience in retrieval
     @given(
         bucket_name=st.text(
@@ -986,16 +818,10 @@ class TestS3EventRetrieverPropertyTests:
             patch(
                 "checkpoint_lambda.s3_retriever.S3EventRetriever.retrieve_event"
             ) as mock_retrieve,
-            patch(
-                "checkpoint_lambda.s3_retriever.S3EventRetriever.should_process_event"
-            ) as mock_should_process,
         ):
             # Setup file list
             file_keys = [scenario["key"] for scenario in file_scenarios]
             mock_list.return_value = file_keys
-
-            # Setup should_process_event to always return True for simplicity
-            mock_should_process.return_value = True
 
             # Setup retrieve_event to simulate different scenarios
             def retrieve_side_effect(key):
@@ -1025,8 +851,8 @@ class TestS3EventRetrieverPropertyTests:
             # Execute the method under test
             valid_events, validation_errors = retriever.retrieve_and_validate_events()
 
-            # Verify error resilience: system should continue processing despite errors
-            # and return all successfully retrieved events
+            # Verify error resilience: system should continue processing
+            # despite errors and return all successfully retrieved events
 
             # 1. Verify all successful events were processed and returned
             assert len(valid_events) == len(expected_successful_events), (
@@ -1034,13 +860,13 @@ class TestS3EventRetrieverPropertyTests:
                 f"but got {len(valid_events)}"
             )
 
-            # 2. Verify all failed events were recorded as validation errors
+            # 2. Verify all failed events were recorded as errors
             assert len(validation_errors) == expected_error_count, (
                 f"Expected {expected_error_count} validation errors, "
                 f"but got {len(validation_errors)}"
             )
 
-            # 3. Verify that each validation error contains the expected information
+            # 3. Verify that each error contains the expected information
             error_keys = {error["source_key"] for error in validation_errors}
             expected_error_keys = {
                 scenario["key"]
@@ -1051,7 +877,7 @@ class TestS3EventRetrieverPropertyTests:
                 f"Expected error keys {expected_error_keys}, but got {error_keys}"
             )
 
-            # 4. Verify that each validation error has the required structure
+            # 4. Verify that each error has the required structure
             for error in validation_errors:
                 assert "source_key" in error, "Validation error missing 'source_key'"
                 assert "errors" in error, "Validation error missing 'errors'"
@@ -1059,25 +885,228 @@ class TestS3EventRetrieverPropertyTests:
                     f"Error source_key {error['source_key']} not in original file list"
                 )
 
-            # 5. Verify that all valid events are properly validated VisitEvent objects
+            # 5. Verify all valid events are VisitEvent objects
             for event in valid_events:
                 assert isinstance(event, VisitEvent), (
                     f"Expected VisitEvent object, got {type(event)}"
                 )
 
-            # 6. Verify that the method was called with all files (no early termination)
+            # 6. Verify that the method was called with all files
             mock_list.assert_called_once()
             assert mock_retrieve.call_count == len(file_scenarios), (
                 f"Expected {len(file_scenarios)} retrieve calls, "
                 f"but got {mock_retrieve.call_count}"
             )
 
-            # 7. Verify that should_process_event was called for each
-            # successfully retrieved event
-            # (Note: should_process_event is only called for events that were
-            # successfully retrieved)
-            expected_should_process_calls = len(expected_successful_events)
-            assert mock_should_process.call_count == expected_should_process_calls, (
-                f"Expected {expected_should_process_calls} should_process_event calls, "
-                f"but got {mock_should_process.call_count}"
-            )
+
+class TestFilterRemoval:
+    """Tests verifying timestamp filter removal from S3EventRetriever.
+
+    Validates Requirements:
+    - 4.1: S3_Event_Retriever returns all valid Visit_Events without
+            filtering by event timestamp
+    - 4.2: Events with timestamps older than since_timestamp are
+            still included
+    - 4.3: S3_Event_Retriever removes should_process_event method
+    - 5.1: S3 objects with LastModified < since_timestamp are skipped
+    - 5.2: S3 LastModified used only as performance optimization
+    - 5.3: S3 objects with LastModified >= since_timestamp are
+            downloaded regardless of event timestamps
+    - 5.4: When since_timestamp is None, all objects are downloaded
+    """
+
+    # Constants for test event keys (avoid E501 line length)
+    SUBMIT_KEY = "log-submit-20240115-100000-42-ingest-form-alpha-2024-01-15.json"
+    PASSQC_KEY = "log-pass-qc-20240120-100000-42-ingest-form-alpha-2024-01-20.json"
+    OLD_EVENT_KEY = "log-submit-20240101-100000-42-ingest-form-alpha-2024-01-01.json"
+
+    def _make_event_data(
+        self,
+        action: str = "submit",
+        timestamp: str = "2024-01-15T10:00:00Z",
+        ptid: str = "ABC123",
+        visit_date: str = "2024-01-15",
+    ) -> dict:
+        """Create valid event data for testing."""
+        return {
+            "action": action,
+            "study": "adrc",
+            "pipeline_adcid": 42,
+            "project_label": "test_project",
+            "center_label": "test_center",
+            "gear_name": "ingest",
+            "ptid": ptid,
+            "visit_date": visit_date,
+            "datatype": "form",
+            "module": "UDS",
+            "timestamp": timestamp,
+        }
+
+    def test_should_process_event_method_removed(self):
+        """Verify should_process_event no longer exists.
+
+        Validates Requirement 4.3.
+        """
+        retriever = S3EventRetriever("any-bucket")
+        assert not hasattr(retriever, "should_process_event")
+
+    def test_fetch_and_validate_returns_visit_event_directly(
+        self, s3_client, setup_s3_environment
+    ):
+        """Verify _fetch_and_validate returns VisitEvent directly.
+
+        There is no "skipped" result path; valid events are always
+        returned as VisitEvent objects.
+
+        Validates Requirements 4.1, 4.2.
+        """
+        bucket = "test-bucket-fetch-validate-direct"
+        s3_client.create_bucket(Bucket=bucket)
+
+        event_data = self._make_event_data(timestamp="2024-01-10T10:00:00Z")
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=self.SUBMIT_KEY,
+            Body=json.dumps(event_data).encode(),
+        )
+
+        # Use a since_timestamp AFTER the event timestamp
+        since = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
+        retriever = S3EventRetriever(bucket, since_timestamp=since)
+
+        result = retriever._fetch_and_validate(self.SUBMIT_KEY)  # noqa: SLF001
+
+        # Must be VisitEvent, never a "skipped" dict
+        assert isinstance(result, VisitEvent)
+        assert result.action == "submit"
+        assert result.ptid == "ABC123"
+
+    def test_s3_lastmodified_prefilter_skips_old_files(
+        self, s3_client, setup_s3_environment
+    ):
+        """Verify list_event_files skips files with LastModified earlier than
+        since_timestamp.
+
+        Validates Requirement 5.1.
+        """
+        bucket = "test-bucket-prefilter-old"
+        s3_client.create_bucket(Bucket=bucket)
+
+        # Upload a file (LastModified will be "now" from moto)
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=self.SUBMIT_KEY,
+            Body=b"content",
+        )
+
+        # Set since_timestamp far in the future so file is "old"
+        future_ts = datetime(2099, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        retriever = S3EventRetriever(bucket, since_timestamp=future_ts)
+        files = retriever.list_event_files()
+
+        assert files == []
+
+    def test_s3_lastmodified_prefilter_includes_recent_files(
+        self, s3_client, setup_s3_environment
+    ):
+        """Verify list_event_files includes files with LastModified at or after
+        since_timestamp.
+
+        Validates Requirements 5.2, 5.3.
+        """
+        bucket = "test-bucket-prefilter-recent"
+        s3_client.create_bucket(Bucket=bucket)
+
+        # Upload file (LastModified = now from moto, which is recent)
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=self.SUBMIT_KEY,
+            Body=b"content",
+        )
+
+        # Set since_timestamp in the past so file is "recent"
+        past_ts = datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        retriever = S3EventRetriever(bucket, since_timestamp=past_ts)
+        files = retriever.list_event_files()
+
+        assert self.SUBMIT_KEY in files
+
+    def test_s3_lastmodified_prefilter_disabled_when_no_timestamp(
+        self, s3_client, setup_s3_environment
+    ):
+        """Verify all files are listed when since_timestamp is None.
+
+        Validates Requirement 5.4.
+        """
+        bucket = "test-bucket-prefilter-none"
+        s3_client.create_bucket(Bucket=bucket)
+
+        # Upload multiple files
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=self.SUBMIT_KEY,
+            Body=b"content",
+        )
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=self.PASSQC_KEY,
+            Body=b"content",
+        )
+
+        # No since_timestamp - all files should be returned
+        retriever = S3EventRetriever(bucket, since_timestamp=None)
+        files = retriever.list_event_files()
+
+        assert len(files) == 2
+        assert self.SUBMIT_KEY in files
+        assert self.PASSQC_KEY in files
+
+    def test_events_returned_regardless_of_event_timestamp(
+        self, s3_client, setup_s3_environment
+    ):
+        """Verify events with old timestamps are still returned.
+
+        The event timestamp inside the file does NOT affect whether
+        the event is returned. Only S3 LastModified is used as a
+        pre-filter on file listing, not on event content.
+
+        Validates Requirements 4.1, 4.2, 5.2.
+        """
+        bucket = "test-bucket-event-ts-irrelevant"
+        s3_client.create_bucket(Bucket=bucket)
+
+        # Event with a very old timestamp inside it
+        old_event = self._make_event_data(
+            timestamp="2020-06-01T10:00:00Z",
+            visit_date="2020-06-01",
+        )
+        # Event with a recent timestamp
+        new_event = self._make_event_data(
+            action="pass-qc",
+            timestamp="2024-01-20T10:00:00Z",
+            visit_date="2024-01-20",
+        )
+
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=self.SUBMIT_KEY,
+            Body=json.dumps(old_event).encode(),
+        )
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=self.PASSQC_KEY,
+            Body=json.dumps(new_event).encode(),
+        )
+
+        # since_timestamp is between the two event timestamps
+        # but both files have recent LastModified (just uploaded)
+        since = datetime(2024, 1, 10, 0, 0, 0, tzinfo=timezone.utc)
+        retriever = S3EventRetriever(bucket, since_timestamp=since)
+        events, errors = retriever.retrieve_and_validate_events()
+
+        # Both events returned regardless of event timestamp
+        assert len(events) == 2
+        assert len(errors) == 0
+        actions = {e.action for e in events}
+        assert "submit" in actions
+        assert "pass-qc" in actions

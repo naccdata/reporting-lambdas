@@ -187,15 +187,18 @@ resource "aws_lambda_function" "event_log_checkpoint" {
   layers = local.layer_arns
 
   environment {
-    variables = {
-      BUCKET                  = var.source_bucket
-      PREFIX                  = var.event_log_prefix
-      CHECKPOINT_BUCKET       = var.checkpoint_bucket
-      CHECKPOINT_KEY_TEMPLATE = var.checkpoint_key_template
-      LOG_LEVEL               = var.log_level
-      ENVIRONMENT             = var.environment
-      POWERTOOLS_SERVICE_NAME = "event-log-checkpoint-${var.environment}"
-    }
+    variables = merge(
+      {
+        BUCKET                  = var.source_bucket
+        PREFIX                  = var.event_log_prefix
+        CHECKPOINT_BUCKET       = var.checkpoint_bucket
+        CHECKPOINT_KEY_TEMPLATE = var.checkpoint_key_template
+        LOG_LEVEL               = var.log_level
+        ENVIRONMENT             = var.environment
+        POWERTOOLS_SERVICE_NAME = "event-log-checkpoint-${var.environment}"
+      },
+      var.max_files_per_run > 0 ? { MAX_FILES_PER_RUN = tostring(var.max_files_per_run) } : {}
+    )
   }
 
   tracing_config {

@@ -1,11 +1,12 @@
 """S3 event retriever for processing event log files.
 
 This module contains the S3EventRetriever class that handles S3
-operations for event log retrieval, timestamp filtering, and validation
-using VisitEvent Pydantic model directly.
+operations for event log retrieval and validation using VisitEvent
+Pydantic model directly.
 """
 
 import json
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -17,6 +18,8 @@ from pydantic import ValidationError
 
 from checkpoint_lambda.models import VisitEvent
 
+logger = logging.getLogger(__name__)
+
 
 class S3EventRetriever:
     """Repository for retrieving VisitEvent objects from S3 storage.
@@ -24,8 +27,8 @@ class S3EventRetriever:
     This repository handles:
     - Listing event files matching the configured pattern
     - Retrieving and validating events as VisitEvent domain objects
-    - Filtering events by timestamp for incremental processing
     - Collecting validation errors for logging
+    - Limiting files per invocation to ensure progress within timeouts
     """
 
     # Default pattern:
@@ -45,6 +48,7 @@ class S3EventRetriever:
         since_timestamp: Optional[datetime] = None,
         file_pattern: Optional[re.Pattern] = None,
         max_workers: Optional[int] = None,
+        max_files: Optional[int] = None,
     ):
         """Initialize with S3 bucket, optional prefix, and cutoff timestamp.
 
@@ -56,21 +60,29 @@ class S3EventRetriever:
                           (default DEFAULT_PATTERN)
             max_workers: Max concurrent S3 fetch threads
                          (default DEFAULT_MAX_WORKERS)
+            max_files: Max number of files to retrieve per invocation.
+                       None means no cap (all matching files are returned).
+                       Use to limit work per run so the lambda makes
+                       incremental progress within its timeout.
         """
         self.bucket = bucket
         self.prefix = prefix
         self.since_timestamp = since_timestamp
         self.file_pattern = file_pattern or self.DEFAULT_PATTERN
         self.max_workers = max_workers or self.DEFAULT_MAX_WORKERS
+        self.max_files = max_files
 
     def list_event_files(self) -> List[str]:
         """List event files matching the configured pattern.
 
-        Paginates through all S3 results to handle buckets
-        with more than 1,000 objects.
+        Paginates through S3 results, filtering by the file pattern and
+        by S3 LastModified date when a since_timestamp is configured.
+        Stops after collecting max_files matching files (when configured)
+        to bound work per invocation.
 
         Returns:
-            List of S3 keys matching the configured file pattern
+            List of S3 keys matching the configured file pattern,
+            up to max_files entries if a cap is configured
 
         Raises:
             ClientError: If S3 access fails
@@ -78,15 +90,41 @@ class S3EventRetriever:
         s3_client = boto3.client("s3")
         paginator = s3_client.get_paginator("list_objects_v2")
 
-        matching_files = []
+        matching_files: List[str] = []
 
         for page in paginator.paginate(Bucket=self.bucket, Prefix=self.prefix):
             if "Contents" not in page:
                 continue
             for obj in page["Contents"]:
                 key = obj["Key"]
-                if self.file_pattern.match(key):
-                    matching_files.append(key)
+                if not self.file_pattern.match(key):
+                    continue
+
+                # Use S3 LastModified as a cheap pre-filter to skip
+                # files that were uploaded before the cutoff timestamp.
+                # This is safe because a file cannot be uploaded before
+                # the event it contains occurred, so LastModified is
+                # always >= the event timestamp inside.  We use strict
+                # less-than so boundary cases are still downloaded and
+                # validated after parsing.
+                if self.since_timestamp is not None:
+                    last_modified = obj["LastModified"]
+                    # LastModified is timezone-aware (UTC) from boto3
+                    if last_modified < self.since_timestamp:
+                        continue
+
+                matching_files.append(key)
+
+                if self.max_files is not None and len(matching_files) >= self.max_files:
+                    logger.warning(
+                        "File cap reached; more files may remain unprocessed",
+                        extra={
+                            "max_files": self.max_files,
+                            "bucket": self.bucket,
+                            "prefix": self.prefix,
+                        },
+                    )
+                    return matching_files
 
         return matching_files
 
@@ -116,22 +154,6 @@ class S3EventRetriever:
         # Validate and return VisitEvent object
         return VisitEvent.model_validate(event_data)
 
-    def should_process_event(self, event: VisitEvent) -> bool:
-        """Determine if event should be processed based on timestamp.
-
-        Args:
-            event: VisitEvent object
-
-        Returns:
-            True if event should be processed (timestamp > since_timestamp or no filter)
-        """
-        # If no timestamp filter is set, process all events
-        if self.since_timestamp is None:
-            return True
-
-        # Only process events with timestamp > since_timestamp
-        return event.timestamp > self.since_timestamp
-
     def _fetch_and_validate(self, key: str) -> Union[VisitEvent, dict[str, str]]:
         """Fetch and validate a single event file from S3.
 
@@ -144,10 +166,7 @@ class S3EventRetriever:
             VisitEvent on success, or error dict on failure
         """
         try:
-            visit_event = self.retrieve_event(key)
-            if not self.should_process_event(visit_event):
-                return {"source_key": key, "skipped": "true"}
-            return visit_event
+            return self.retrieve_event(key)
         except ClientError as e:
             return {
                 "source_key": key,
@@ -175,7 +194,6 @@ class S3EventRetriever:
         This method handles the complete retrieval and validation pipeline:
         - Lists event files matching the pattern
         - Retrieves and validates each file as VisitEvent objects
-        - Filters by timestamp if since_timestamp is set
         - Collects validation errors for logging
 
         Returns:
@@ -215,8 +233,6 @@ class S3EventRetriever:
                 if isinstance(result, VisitEvent):
                     valid_events.append(result)
                 elif isinstance(result, dict):
-                    if result.get("skipped") == "true":
-                        continue
                     validation_errors.append(result)
 
         return valid_events, validation_errors

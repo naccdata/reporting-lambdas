@@ -18,7 +18,7 @@ log_retention_days = 30   # Standard retention for staging
 # Layer Management
 # IMPORTANT: For first deployment, set reuse_existing_layers = false
 # After first deployment, change to true for faster deployments
-reuse_existing_layers   = false  # Set to true after first deployment
+reuse_existing_layers   = false # Set to true after first deployment
 use_external_layer_arns = false
 force_layer_update      = false
 

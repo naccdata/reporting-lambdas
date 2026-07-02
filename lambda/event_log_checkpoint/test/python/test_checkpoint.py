@@ -7,7 +7,11 @@ methods.
 
 from datetime import datetime, timezone
 
-from checkpoint_lambda.checkpoint import Checkpoint
+from checkpoint_lambda.checkpoint import (
+    IDENTITY_COLUMNS,
+    Checkpoint,
+    events_to_dataframe,
+)
 from checkpoint_lambda.models import VisitEvent
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -513,66 +517,74 @@ class TestCheckpointPropertyBased:
         """Property 0: Incremental checkpoint correctness.
 
         For any previous checkpoint and set of new events, the merged checkpoint
-        should contain all events from the previous checkpoint plus all new events,
-        with no duplicates removed and no data loss.
+        preserves existing events not in the new batch, and adds deduplicated
+        new events (content-based upsert semantics).
 
         Feature: event-log-scraper, Property 0: Incremental checkpoint correctness
-        Validates: Requirements 4.1, 7.1
+        Validates: Requirements 2.1, 2.5, 7.1
         """
+        from checkpoint_lambda.checkpoint import IDENTITY_COLUMNS
+
         # Create previous checkpoint from previous events
         previous_checkpoint = Checkpoint.from_events(previous_events)
 
-        # Get initial counts
+        # Get initial count
         previous_count = previous_checkpoint.get_event_count()
-        new_count = len(new_events)
 
         # Add new events to create merged checkpoint
         merged_checkpoint = previous_checkpoint.add_events(new_events)
 
         # Verify correctness properties
 
-        # 1. Total count should be sum of previous + new events
-        assert merged_checkpoint.get_event_count() == previous_count + new_count
-
-        # 2. Original checkpoint should remain unchanged (immutability)
+        # 1. Original checkpoint should remain unchanged (immutability)
         assert previous_checkpoint.get_event_count() == previous_count
 
-        # 3. All previous events should be present in merged checkpoint
-        if previous_count > 0:
+        # 2. Merged count <= previous + new (dedup can only reduce)
+        assert merged_checkpoint.get_event_count() <= previous_count + len(new_events)
+
+        # 3. Existing events whose identity is NOT in new batch
+        #    are preserved in the merged checkpoint
+        if previous_count > 0 and new_events:
             previous_df = previous_checkpoint.dataframe
             merged_df = merged_checkpoint.dataframe
+            new_df = events_to_dataframe(new_events)
 
-            # Check that all previous events are in the merged checkpoint
-            # We'll verify by checking that for each previous event,
-            # there's a matching event in merged
-            for i in range(previous_count):
-                prev_row = previous_df.row(i, named=True)
-                # Find matching row in merged checkpoint
+            # Find previous events not in the new batch
+            preserved_df = previous_df.join(
+                new_df.select(IDENTITY_COLUMNS).unique(),
+                on=IDENTITY_COLUMNS,
+                how="anti",
+                nulls_equal=True,
+            )
+            # All preserved events should be in merged
+            for i in range(len(preserved_df)):
+                prev_row = preserved_df.row(i, named=True)
                 matching_rows = merged_df.filter(
                     (merged_df["ptid"] == prev_row["ptid"])
                     & (merged_df["visit_date"] == prev_row["visit_date"])
                     & (merged_df["timestamp"] == prev_row["timestamp"])
                     & (merged_df["action"] == prev_row["action"])
                 )
-                assert len(matching_rows) >= 1, (
-                    f"Previous event not found in merged checkpoint: {prev_row}"
-                )
+                assert len(matching_rows) >= 1, f"Preserved event not found: {prev_row}"
 
-        # 4. All new events should be present in merged checkpoint
-        if new_count > 0:
+        # 4. After internal batch dedup, deduplicated new events
+        #    should be present in merged checkpoint
+        if new_events:
+            from checkpoint_lambda.checkpoint import IDENTITY_COLUMNS as ID_COLS
+
             merged_df = merged_checkpoint.dataframe
+            new_df = events_to_dataframe(new_events)
+            deduped_new = new_df.unique(subset=ID_COLS, keep="last")
 
-            for new_event in new_events:
-                # Find matching row in merged checkpoint
+            for i in range(len(deduped_new)):
+                new_row = deduped_new.row(i, named=True)
                 matching_rows = merged_df.filter(
-                    (merged_df["ptid"] == new_event.ptid)
-                    & (merged_df["visit_date"] == new_event.visit_date)
-                    & (merged_df["timestamp"] == new_event.timestamp)
-                    & (merged_df["action"] == new_event.action)
+                    (merged_df["ptid"] == new_row["ptid"])
+                    & (merged_df["visit_date"] == new_row["visit_date"])
+                    & (merged_df["timestamp"] == new_row["timestamp"])
+                    & (merged_df["action"] == new_row["action"])
                 )
-                assert len(matching_rows) >= 1, (
-                    f"New event not found in merged checkpoint: {new_event}"
-                )
+                assert len(matching_rows) >= 1, f"New event not found: {new_row}"
 
         # 5. Events should be sorted by timestamp
         if merged_checkpoint.get_event_count() > 1:
@@ -622,6 +634,92 @@ class TestCheckpointPropertyBased:
                 assert row["datatype"] is not None
                 assert row["timestamp"] is not None
                 # Optional fields (visit_number, module, packet) can be None
+
+    @given(
+        st.lists(
+            valid_visit_event_for_checkpoint(),
+            min_size=0,
+            max_size=10,
+        ),
+        st.lists(
+            valid_visit_event_for_checkpoint(),
+            min_size=1,
+            max_size=10,
+        ),
+    )
+    @settings(max_examples=100, deadline=None)
+    def test_property_upsert_completeness(self, existing_events, new_events):
+        """Property 2: Upsert Completeness.
+
+        For any checkpoint and batch of new events, after merging:
+        (a) every new event whose identity does NOT exist in the
+            original checkpoint appears in the merged result
+        (b) every existing event whose identity does NOT appear in
+            the new batch is preserved unchanged in the result
+
+        Feature: content-based-deduplication, Property 2: Upsert Completeness
+        Validates: Requirements 2.1, 2.5
+        """
+        # Create checkpoint from existing events
+        checkpoint = Checkpoint.from_events(existing_events)
+        original_df = checkpoint.dataframe.clone()
+
+        # Merge new events
+        merged = checkpoint.add_events(new_events)
+        merged_df = merged.dataframe
+
+        new_df = events_to_dataframe(new_events)
+        # Deduplicate new batch internally (last wins)
+        deduped_new = new_df.unique(subset=IDENTITY_COLUMNS, keep="last")
+
+        # (a) Every new event whose identity does NOT exist in
+        # the original checkpoint appears in the merged result.
+        # Find novel identities: in deduped_new but not original
+        if not original_df.is_empty():
+            novel_new = deduped_new.join(
+                original_df.select(IDENTITY_COLUMNS).unique(),
+                on=IDENTITY_COLUMNS,
+                how="anti",
+                nulls_equal=True,
+            )
+        else:
+            novel_new = deduped_new
+
+        # Anti-join novel against merged: should be empty
+        # (all novel events must appear in merged)
+        missing_novel = novel_new.join(
+            merged_df.select(IDENTITY_COLUMNS),
+            on=IDENTITY_COLUMNS,
+            how="anti",
+            nulls_equal=True,
+        )
+        assert len(missing_novel) == 0, (
+            f"Novel new events missing from merged result: {missing_novel.to_dicts()}"
+        )
+
+        # (b) Every existing event whose identity does NOT appear
+        # in the new batch is preserved unchanged in the result.
+        if not original_df.is_empty():
+            # Find preserved rows: original rows whose identity
+            # is NOT in the deduped new batch
+            preserved = original_df.join(
+                deduped_new.select(IDENTITY_COLUMNS).unique(),
+                on=IDENTITY_COLUMNS,
+                how="anti",
+                nulls_equal=True,
+            )
+
+            # Anti-join preserved against merged on ALL columns:
+            # every preserved row must exist in merged unchanged
+            missing = preserved.join(
+                merged_df,
+                on=preserved.columns,
+                how="anti",
+                nulls_equal=True,
+            )
+            assert len(missing) == 0, (
+                f"Preserved events missing or changed in merged: {missing.to_dicts()}"
+            )
 
     @given(
         st.lists(
@@ -1283,3 +1381,123 @@ class TestCheckpointPropertyBased:
             "Checkpoint schema does not support required fields for "
             "completeness analysis"
         )
+
+    @given(
+        st.lists(
+            valid_visit_event_for_checkpoint(),
+            min_size=0,
+            max_size=10,
+        ),
+        st.lists(
+            valid_visit_event_for_checkpoint(),
+            min_size=1,
+            max_size=10,
+        ),
+    )
+    @settings(max_examples=100, deadline=None)
+    def test_property_sort_invariant(self, existing_events, new_events):
+        """Property 6: Sort Invariant.
+
+        For any checkpoint after merging, all events are sorted in
+        ascending order by (timestamp, ptid, action), producing a
+        deterministic total order.
+
+        Feature: content-based-deduplication, Property 6: Sort Invariant
+        Validates: Requirements 6.1, 6.2, 6.3
+        """
+        # Create checkpoint from existing events
+        checkpoint = Checkpoint.from_events(existing_events)
+
+        # Merge new events
+        merged = checkpoint.add_events(new_events)
+
+        # Verify sort invariant on merged checkpoint
+        if merged.get_event_count() <= 1:
+            return  # Trivially sorted
+
+        df = merged.dataframe
+        timestamps = df["timestamp"].to_list()
+        ptids = df["ptid"].to_list()
+        actions = df["action"].to_list()
+
+        # For consecutive rows, verify ascending tuple order
+        for i in range(len(timestamps) - 1):
+            current = (timestamps[i], ptids[i], actions[i])
+            next_row = (
+                timestamps[i + 1],
+                ptids[i + 1],
+                actions[i + 1],
+            )
+            assert current <= next_row, (
+                f"Sort invariant violated at row {i}: {current} > {next_row}"
+            )
+
+    @given(event=valid_visit_event_for_checkpoint())
+    @settings(max_examples=100, deadline=None)
+    def test_property_correction_replacement(self, event):
+        """Property 4: Correction Replacement.
+
+        For any checkpoint containing an event E, and a new event E'
+        with the same identity as E but at least one different
+        non-identity field, after merging: E' appears in the result
+        and E does not.
+
+        Feature: content-based-deduplication, Property 4: Correction Replacement
+        Validates: Requirements 2.3
+        """
+        # Non-identity fields that can be modified for correction
+        non_identity_fields = [
+            "study",
+            "project_label",
+            "center_label",
+            "gear_name",
+            "visit_number",
+            "packet",
+        ]
+
+        # Create checkpoint from the original event
+        checkpoint = Checkpoint.from_events([event])
+        assert checkpoint.get_event_count() == 1
+
+        # Create a correction event with same identity but
+        # different non-identity field(s).
+        # Modify the study field to guarantee a difference.
+        correction_data = event.model_dump()
+        original_study = correction_data["study"]
+        alt_studies = [s for s in ["adrc", "dvcid", "leads"] if s != original_study]
+        correction_data["study"] = alt_studies[0]
+
+        correction_event = VisitEvent(**correction_data)
+
+        # Verify identity fields match
+        for col in IDENTITY_COLUMNS:
+            assert getattr(event, col) == getattr(correction_event, col)
+
+        # Verify at least one non-identity field differs
+        has_diff = any(
+            getattr(event, f) != getattr(correction_event, f)
+            for f in non_identity_fields
+        )
+        assert has_diff
+
+        # Merge the correction event into the checkpoint
+        merged = checkpoint.add_events([correction_event])
+
+        # Result should contain exactly one event (replacement)
+        assert merged.get_event_count() == 1
+
+        # The merged event should match the correction (E')
+        merged_df = merged.dataframe
+        result_row = merged_df.row(0, named=True)
+        assert result_row["study"] == correction_event.study
+
+        # Verify E' appears (all non-identity fields match E')
+        for field in non_identity_fields:
+            expected = getattr(correction_event, field)
+            actual = result_row[field]
+            assert actual == expected, (
+                f"Field {field}: expected {expected}, got {actual}"
+            )
+
+        # Verify E does NOT appear (original study differs)
+        assert result_row["study"] != original_study

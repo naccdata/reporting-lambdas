@@ -113,6 +113,7 @@ The Lambda function uses these environment variables:
 | `PREFIX`                  | S3 prefix for event log files                                    | `prod/logs/` or `""` (empty for root)            | No       |
 | `CHECKPOINT_BUCKET`       | S3 bucket for checkpoint files (informational only)              | `submission-events`                              | No       |
 | `CHECKPOINT_KEY_TEMPLATE` | Template for checkpoint keys with {study} and {datatype}         | `prod/checkpoints/{study}/{datatype}/events.parquet` | Yes      |
+| `MAX_FILES_PER_RUN`       | Max files to retrieve per invocation (no cap if unset)           | `5000`                                           | No       |
 | `LOG_LEVEL`               | Logging level (INFO, DEBUG, WARNING)                             | `INFO`                                           | No       |
 | `ENVIRONMENT`             | Environment name (dev/staging/prod)                              | `dev`                                            | No       |
 | `POWERTOOLS_*`            | AWS Lambda Powertools configuration                              | Set automatically by framework                   | No       |
@@ -273,7 +274,8 @@ Custom metrics emitted by the Lambda:
 | Metric Name                       | Type  | Dimensions         | Description                                    |
 | --------------------------------- | ----- | ------------------ | ---------------------------------------------- |
 | `EventsFiltered`                  | Count | None               | Number of sandbox events filtered out          |
-| `EventsProcessedByStudyDatatype`  | Count | Study, Datatype    | Events processed per study-datatype group      |
+| `EventsProcessedByStudyDatatype`  | Count | Study, Datatype    | Events merged per study-datatype group         |
+| `EventsAddedByStudyDatatype`      | Count | Study, Datatype    | Net new events added after deduplication       |
 | `CheckpointsSaved`                | Count | None               | Number of checkpoints successfully saved       |
 | `CheckpointSaveFailures`          | Count | Study, Datatype    | Number of checkpoint save failures             |
 

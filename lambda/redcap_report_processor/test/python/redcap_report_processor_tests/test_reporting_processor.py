@@ -62,5 +62,5 @@ class TestReportingProcessor:
 
             assert response.num_records == 2
             assert response.output_location.startswith(  # type: ignore
-                "s3://dummy-bucket/redcap/sandbox/testing/file.parquet"
+                "s3://dummy-bucket/redcap/dev/testing/file.parquet"
             )

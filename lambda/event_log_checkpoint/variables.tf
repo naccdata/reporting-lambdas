@@ -55,6 +55,17 @@ variable "log_level" {
   }
 }
 
+variable "max_files_per_run" {
+  description = "Max number of files to retrieve per Lambda invocation. 0 means no cap (all matching files are processed)."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.max_files_per_run >= 0
+    error_message = "max_files_per_run must be 0 (no cap) or a positive integer."
+  }
+}
+
 # Layer management variables
 variable "reuse_existing_layers" {
   description = "Whether to reuse existing Lambda layers if they exist (recommended for faster deployments)"

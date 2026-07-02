@@ -2172,3 +2172,315 @@ class TestLambdaHandlerEndToEndIntegration:
         # Verify simplified response format
         assert isinstance(response, dict)
         assert response["statusCode"] == 200
+
+
+class TestLambdaHandlerBackfillIntegration:
+    """Integration tests for backfilled events with old timestamps.
+
+    Validates Requirements 3.1, 3.2, 2.1:
+    - Lambda passes ALL events to checkpoint without timestamp filtering
+    - Events with old timestamps still get included
+    - New events whose identity doesn't exist get added
+    """
+
+    def test_backfilled_events_appear_in_checkpoint(self, s3_client, lambda_config_env):
+        """Test that events with old timestamps are merged after a checkpoint
+        already exists with newer events.
+
+        Workflow:
+        1. Upload 'recent' events (2024-01-15) and invoke lambda
+        2. Upload 'old' backfill events (2024-01-10) and invoke lambda
+        3. Verify checkpoint contains BOTH recent and backfill events
+        """
+        import polars as pl
+
+        bucket = "test-backfill-integration"
+        prefix = "logs/"
+        s3_client.create_bucket(Bucket=bucket)
+        setup_lambda_env(bucket=bucket, prefix=prefix)
+
+        # --- Step 1: Process recent events to create initial checkpoint ---
+        recent_event = {
+            "action": "submit",
+            "study": "adrc",
+            "pipeline_adcid": 42,
+            "project_label": "ingest-form-alpha",
+            "center_label": "test-center",
+            "gear_name": "form-processor",
+            "ptid": "110001",
+            "visit_date": "2024-01-15",
+            "visit_number": "01",
+            "datatype": "form",
+            "module": "UDS",
+            "packet": "I",
+            "timestamp": "2024-01-15T10:00:00Z",
+        }
+        recent_key = create_s3_log_key(
+            prefix,
+            "submit",
+            "20240115-100000",
+            42,
+            "ingest-form-alpha",
+            "110001",
+            "2024-01-15",
+        )
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=recent_key,
+            Body=json.dumps(recent_event),
+        )
+
+        mock_context = Mock(spec=LambdaContext)
+        response = lambda_handler({}, mock_context)
+        assert response["statusCode"] == 200
+
+        # --- Step 2: Upload backfill events with OLD timestamps ---
+        # Remove the recent event file so it doesn't get reprocessed
+        s3_client.delete_object(Bucket=bucket, Key=recent_key)
+
+        backfill_event = {
+            "action": "pass-qc",
+            "study": "adrc",
+            "pipeline_adcid": 42,
+            "project_label": "ingest-form-alpha",
+            "center_label": "test-center",
+            "gear_name": "qc-processor",
+            "ptid": "110002",
+            "visit_date": "2024-01-10",
+            "visit_number": "01",
+            "datatype": "form",
+            "module": "UDS",
+            "packet": "I",
+            "timestamp": "2024-01-10T08:00:00Z",
+        }
+        backfill_key = create_s3_log_key(
+            prefix,
+            "pass-qc",
+            "20240110-080000",
+            42,
+            "ingest-form-alpha",
+            "110002",
+            "2024-01-10",
+        )
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=backfill_key,
+            Body=json.dumps(backfill_event),
+        )
+
+        # Invoke lambda again to process backfill
+        response = lambda_handler({}, mock_context)
+        assert response["statusCode"] == 200
+
+        # --- Step 3: Verify checkpoint contains both events ---
+        checkpoint_key = "checkpoints/adrc/form/events.parquet"
+        df = pl.read_parquet(f"s3://{bucket}/{checkpoint_key}")
+
+        # Should have 2 events total
+        assert df.height == 2
+
+        # Verify the recent event is present
+        recent_rows = df.filter(
+            (pl.col("ptid") == "110001") & (pl.col("action") == "submit")
+        )
+        assert recent_rows.height == 1
+
+        # Verify the backfill event is present
+        backfill_rows = df.filter(
+            (pl.col("ptid") == "110002") & (pl.col("action") == "pass-qc")
+        )
+        assert backfill_rows.height == 1
+
+        # Verify sort order: backfill (older) comes first
+        timestamps = df["timestamp"].to_list()
+        assert timestamps[0] < timestamps[1]
+
+
+class TestLambdaHandlerCorrectionIntegration:
+    """Integration tests for correction event handling.
+
+    Validates Requirement 2.3: When a new event has same identity but
+    different non-identity fields, the checkpoint replaces the existing
+    event with the new one.
+    """
+
+    def test_correction_events_replace_originals(self, s3_client, setup_s3_environment):
+        """Test that correction events replace originals in checkpoint.
+
+        Flow:
+        1. Upload original events and invoke lambda (run 1)
+        2. Upload correction events (same identity, different
+           non-identity fields) and invoke lambda (run 2)
+        3. Verify checkpoint contains corrected values only
+        """
+        import polars as pl
+
+        bucket = "test-correction-bucket"
+        s3_client.create_bucket(Bucket=bucket)
+
+        # --- Run 1: Upload and process original events ---
+        original_events = [
+            {
+                "key": create_s3_log_key(
+                    "run1/",
+                    "submit",
+                    "20240115-100000",
+                    42,
+                    "ingest-form-alpha",
+                    "110001",
+                    "2024-01-15",
+                ),
+                "content": {
+                    "action": "submit",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "original-center",
+                    "gear_name": "original-gear",
+                    "ptid": "110001",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "I",
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+            {
+                "key": create_s3_log_key(
+                    "run1/",
+                    "pass-qc",
+                    "20240115-102000",
+                    42,
+                    "ingest-form-alpha",
+                    "110001",
+                    "2024-01-15",
+                ),
+                "content": {
+                    "action": "pass-qc",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "original-center",
+                    "gear_name": "original-gear",
+                    "ptid": "110001",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "01",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "I",
+                    "timestamp": "2024-01-15T10:20:00Z",
+                },
+            },
+        ]
+
+        for event_file in original_events:
+            s3_client.put_object(
+                Bucket=bucket,
+                Key=event_file["key"],
+                Body=json.dumps(event_file["content"]),
+            )
+
+        # Invoke lambda for run 1
+        setup_lambda_env(bucket=bucket, prefix="run1/")
+        mock_context = Mock(spec=LambdaContext)
+        response = lambda_handler({}, mock_context)
+        assert response["statusCode"] == 200
+
+        # --- Run 2: Upload and process correction events ---
+        # Same identity fields, different non-identity fields
+        correction_events = [
+            {
+                "key": create_s3_log_key(
+                    "run2/",
+                    "submit",
+                    "20240115-100000",
+                    42,
+                    "ingest-form-alpha",
+                    "110001",
+                    "2024-01-15",
+                ),
+                "content": {
+                    "action": "submit",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "corrected-center",
+                    "gear_name": "corrected-gear",
+                    "ptid": "110001",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "02",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "Z",
+                    "timestamp": "2024-01-15T10:00:00Z",
+                },
+            },
+            {
+                "key": create_s3_log_key(
+                    "run2/",
+                    "pass-qc",
+                    "20240115-102000",
+                    42,
+                    "ingest-form-alpha",
+                    "110001",
+                    "2024-01-15",
+                ),
+                "content": {
+                    "action": "pass-qc",
+                    "study": "adrc",
+                    "pipeline_adcid": 42,
+                    "project_label": "ingest-form-alpha",
+                    "center_label": "corrected-center",
+                    "gear_name": "corrected-gear",
+                    "ptid": "110001",
+                    "visit_date": "2024-01-15",
+                    "visit_number": "02",
+                    "datatype": "form",
+                    "module": "UDS",
+                    "packet": "Z",
+                    "timestamp": "2024-01-15T10:20:00Z",
+                },
+            },
+        ]
+
+        for event_file in correction_events:
+            s3_client.put_object(
+                Bucket=bucket,
+                Key=event_file["key"],
+                Body=json.dumps(event_file["content"]),
+            )
+
+        # Invoke lambda for run 2 with different prefix
+        setup_lambda_env(bucket=bucket, prefix="run2/")
+        response = lambda_handler({}, mock_context)
+        assert response["statusCode"] == 200
+
+        # --- Verify checkpoint contains corrected values ---
+        checkpoint_key = "checkpoints/adrc/form/events.parquet"
+        s3_uri = f"s3://{bucket}/{checkpoint_key}"
+        df = pl.read_parquet(s3_uri)
+
+        # Checkpoint should have exactly 2 events (not 4)
+        assert len(df) == 2, f"Expected 2 events after correction, got {len(df)}"
+
+        # Verify corrected non-identity field values
+        submit_row = df.filter(pl.col("action") == "submit")
+        assert len(submit_row) == 1
+        assert submit_row["center_label"][0] == "corrected-center"
+        assert submit_row["gear_name"][0] == "corrected-gear"
+        assert submit_row["visit_number"][0] == "02"
+        assert submit_row["packet"][0] == "Z"
+
+        pass_qc_row = df.filter(pl.col("action") == "pass-qc")
+        assert len(pass_qc_row) == 1
+        assert pass_qc_row["center_label"][0] == "corrected-center"
+        assert pass_qc_row["gear_name"][0] == "corrected-gear"
+        assert pass_qc_row["visit_number"][0] == "02"
+        assert pass_qc_row["packet"][0] == "Z"
+
+        # Verify original values are NOT present
+        original_rows = df.filter(pl.col("center_label") == "original-center")
+        assert len(original_rows) == 0, (
+            "Original values should be replaced by corrections"
+        )

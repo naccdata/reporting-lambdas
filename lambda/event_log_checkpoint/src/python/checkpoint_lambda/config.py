@@ -22,6 +22,13 @@ class LambdaConfig(BaseModel):
     checkpoint_key_template: str = Field(
         description="Template for checkpoint keys with {study} and {datatype}"
     )
+    max_files_per_run: int | None = Field(
+        default=None,
+        description=(
+            "Max number of files to retrieve per invocation. "
+            "None means no cap (all matching files are returned)."
+        ),
+    )
 
     def validate_template(self) -> None:
         """Validate checkpoint key template has required placeholders.
