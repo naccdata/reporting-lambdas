@@ -8,6 +8,9 @@
 		"dockerfile": "Dockerfile",
 		"context": "."
 	},
+	"mounts": [
+		"source=${localEnv:HOME}/.aws,target=/home/vscode/.aws,type=bind,consistency=cached"
+	],
 	"features": {
 		"ghcr.io/devcontainers/features/aws-cli:1": {
 			"version": "latest"
@@ -50,6 +53,9 @@
 				"ms-azuretools.vscode-docker"
 			]
 		}
+	},
+	"remoteEnv": {
+		"AWS_PROFILE": "${localEnv:AWS_PROFILE}"
 	}
 
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
