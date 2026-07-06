@@ -117,6 +117,7 @@ def lambda_handler(  # noqa: C901
         max_files_env = os.environ.get("MAX_FILES_PER_RUN")
         config = LambdaConfig(
             bucket=os.environ.get("BUCKET", ""),
+            checkpoint_bucket=os.environ.get("CHECKPOINT_BUCKET", ""),
             prefix=os.environ.get("PREFIX", ""),
             checkpoint_key_template=os.environ.get("CHECKPOINT_KEY_TEMPLATE", ""),
             max_files_per_run=int(max_files_env) if max_files_env else None,
@@ -145,6 +146,7 @@ def lambda_handler(  # noqa: C901
         "Configuration loaded",
         extra={
             "bucket": config.bucket,
+            "checkpoint_bucket": config.checkpoint_bucket,
             "prefix": config.prefix,
             "checkpoint_key_template": config.checkpoint_key_template,
         },
@@ -153,7 +155,9 @@ def lambda_handler(  # noqa: C901
     # Determine global cutoff timestamp from existing checkpoints
     # This avoids fetching files that have already been processed
     checkpoint_prefix = config.checkpoint_key_template.split("{")[0]
-    global_since = _find_earliest_checkpoint_timestamp(config.bucket, checkpoint_prefix)
+    global_since = _find_earliest_checkpoint_timestamp(
+        config.checkpoint_bucket, checkpoint_prefix
+    )
 
     if global_since:
         logger.info(
@@ -295,7 +299,7 @@ def lambda_handler(  # noqa: C901
             checkpoint_key = key_template.generate_key(study, datatype)
 
             # Initialize CheckpointStore for this group
-            checkpoint_store = CheckpointStore(config.bucket, checkpoint_key)
+            checkpoint_store = CheckpointStore(config.checkpoint_bucket, checkpoint_key)
 
             # Load existing checkpoint
             checkpoint = checkpoint_store.get_checkpoint()

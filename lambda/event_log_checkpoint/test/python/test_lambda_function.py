@@ -16,16 +16,20 @@ from aws_lambda_powertools.utilities.typing import LambdaContext
 from checkpoint_lambda.lambda_function import lambda_handler
 
 
-def setup_lambda_env(bucket, prefix="", checkpoint_template=None):
+def setup_lambda_env(
+    bucket, prefix="", checkpoint_template=None, checkpoint_bucket=None
+):
     """Helper function to set Lambda environment variables for tests.
 
     Args:
-        bucket: S3 bucket name for both source and checkpoint
+        bucket: S3 bucket name for source event logs
         prefix: S3 prefix for event logs (default: "")
         checkpoint_template: Checkpoint key template (default: study-datatype
             template)
+        checkpoint_bucket: S3 bucket for checkpoints (default: same as bucket)
     """
     os.environ["BUCKET"] = bucket
+    os.environ["CHECKPOINT_BUCKET"] = checkpoint_bucket or bucket
     os.environ["PREFIX"] = prefix
     if checkpoint_template is None:
         # Default test template - matches conftest.py default
