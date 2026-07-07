@@ -33,11 +33,13 @@ def create_checkpoint_dataframe() -> DataFrame:
             "center_label": Utf8,
             "gear_name": Utf8,
             "ptid": Utf8,
+            "naccid": Utf8,
             "visit_date": Utf8,
             "visit_number": Utf8,
             "datatype": Utf8,
             "module": Utf8,
             "packet": Utf8,
+            "modality": Utf8,
             "timestamp": Datetime("us", time_zone="UTC"),
         }
     )
