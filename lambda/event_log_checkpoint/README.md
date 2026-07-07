@@ -111,7 +111,7 @@ The Lambda function uses these environment variables:
 | ------------------------- | ---------------------------------------------------------------- | ------------------------------------------------ | -------- |
 | `BUCKET`                  | S3 bucket for event logs and checkpoints                         | `submission-events`                              | Yes      |
 | `PREFIX`                  | S3 prefix for event log files                                    | `prod/logs/` or `""` (empty for root)            | No       |
-| `CHECKPOINT_BUCKET`       | S3 bucket for checkpoint files (informational only)              | `submission-events`                              | No       |
+| `CHECKPOINT_BUCKET`       | S3 bucket for checkpoint parquet files                           | `submission-events`                              | Yes      |
 | `CHECKPOINT_KEY_TEMPLATE` | Template for checkpoint keys with {study} and {datatype}         | `prod/checkpoints/{study}/{datatype}/events.parquet` | Yes      |
 | `MAX_FILES_PER_RUN`       | Max files to retrieve per invocation (no cap if unset)           | `5000`                                           | No       |
 | `LOG_LEVEL`               | Logging level (INFO, DEBUG, WARNING)                             | `INFO`                                           | No       |
@@ -234,20 +234,73 @@ Build specific targets:
 
 ## Deployment
 
-See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for detailed deployment instructions.
+### Prerequisites
 
-Quick deployment:
+1. Dev container running: `./bin/start-devcontainer.sh`
+2. AWS SSO session active on host: `aws sso login`
+3. `AWS_PROFILE` set on host (forwarded to container via `remoteEnv`)
+4. Terraform initialized: run `terraform init` from `lambda/event_log_checkpoint/` inside the container
+
+### Quick Deploy
+
+From an interactive shell in the container (`./bin/terminal.sh`):
 
 ```bash
-# Build packages
-./bin/exec-in-devcontainer.sh pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda::
+# Build all packages (function + layers)
+pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda::
 
-# Deploy with Terraform
+# Navigate to terraform directory
 cd lambda/event_log_checkpoint
-./bin/exec-in-devcontainer.sh terraform apply
+
+# Select the target workspace (must match the tfvars file)
+terraform workspace select prod   # or: dev, staging
+
+# Review the plan
+terraform plan -var-file=terraform.prod.tfvars
+
+# Apply
+terraform apply -var-file=terraform.prod.tfvars
 ```
 
-For Terraform configuration, see [docs/TERRAFORM.md](./docs/TERRAFORM.md).
+### Workspaces and State
+
+Each environment has its own Terraform workspace with isolated state stored in S3:
+
+| Workspace | Var file | State key |
+|-----------|----------|-----------|
+| `dev` | `terraform.dev.tfvars` | `env:/dev/lambda/event-log-checkpoint/terraform.tfstate` |
+| `staging` | `terraform.staging.tfvars` | `env:/staging/lambda/event-log-checkpoint/terraform.tfstate` |
+| `prod` | `terraform.prod.tfvars` | `env:/prod/lambda/event-log-checkpoint/terraform.tfstate` |
+
+Always ensure the workspace and tfvars file match. Applying `terraform.prod.tfvars` in the `dev` workspace will create prod-named resources tracked in dev state.
+
+### Code-Only Deployment (fastest)
+
+When only Lambda function code changed (no dependency updates):
+
+```bash
+pants package lambda/event_log_checkpoint/src/python/checkpoint_lambda:lambda
+
+cd lambda/event_log_checkpoint
+terraform apply -var-file=terraform.prod.tfvars \
+  -target=aws_lambda_function.event_log_checkpoint
+```
+
+### Post-Deploy Verification
+
+```bash
+# Invoke manually to test
+aws lambda invoke \
+  --function-name event-log-checkpoint-prod \
+  --payload '{}' \
+  response.json
+cat response.json
+
+# Tail logs
+aws logs tail /aws/lambda/event-log-checkpoint-prod --follow
+```
+
+See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for full deployment guide including rollback procedures, troubleshooting, and multi-environment strategy.
 
 ## Monitoring
 
