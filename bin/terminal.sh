@@ -10,4 +10,4 @@ export DOCKER_CLI_HINTS=false
 export WORKSPACE_FOLDER=`pwd`
 export CONTAINER_HOST=`devcontainer exec --workspace-folder $WORKSPACE_FOLDER hostname`
 export WORKSPACE=`basename $WORKSPACE_FOLDER`
-docker exec -u vscode -w /workspaces/$WORKSPACE -ti $CONTAINER_HOST /bin/zsh
+docker exec -u vscode -w /workspaces/$WORKSPACE -e AWS_PROFILE=$AWS_PROFILE -ti $CONTAINER_HOST /bin/zsh
