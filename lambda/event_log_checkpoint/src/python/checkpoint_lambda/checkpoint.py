@@ -60,17 +60,14 @@ def events_to_dataframe(events: List[VisitEvent]) -> DataFrame:
     # Convert VisitEvent objects to DataFrame using model_dump()
     data = [event.model_dump() for event in events]
 
-    # Create DataFrame - Polars correctly infers timezone-aware datetimes from Pydantic
-    df = DataFrame(data)
+    # Use explicit schema to avoid inference failures when Optional fields
+    # (naccid, visit_number, etc.) are None for the first N rows and Polars
+    # infers Null type, then encounters a string value later in the batch.
+    target_schema = create_checkpoint_dataframe().schema
 
-    # Get the expected schema from empty checkpoint
-    empty_df = create_checkpoint_dataframe()
+    df = DataFrame(data, schema=target_schema)
 
-    # Cast all columns to match the expected schema
-    # Polars handles timezone-aware datetime casting correctly
-    return df.select(
-        [col(column_name).cast(dtype) for column_name, dtype in empty_df.schema.items()]
-    )
+    return df
 
 
 class Checkpoint:
