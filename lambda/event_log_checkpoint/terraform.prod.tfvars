@@ -17,12 +17,13 @@ log_retention_days = 90   # Longer retention for production
 
 # Scheduled Execution
 # Runs daily at 10:00 AM UTC (2-3 AM Pacific, 5-6 AM Eastern)
+max_files_per_run   = 25000
 schedule_expression = "cron(0 10 * * ? *)"
 
 # Layer Management
 # IMPORTANT: For first deployment, set reuse_existing_layers = false
 # After first deployment, change to true for faster deployments
-reuse_existing_layers   = false # Set to true after first deployment
+reuse_existing_layers   = true
 use_external_layer_arns = false
 force_layer_update      = false
 

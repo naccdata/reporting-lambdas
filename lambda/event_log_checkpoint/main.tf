@@ -46,6 +46,7 @@ resource "aws_lambda_layer_version" "powertools" {
 
   compatible_runtimes = ["python3.12"]
   description         = "AWS Lambda Powertools layer for event log checkpoint function (${var.environment})"
+  skip_destroy        = true
 
   lifecycle {
     create_before_destroy = true
@@ -75,6 +76,7 @@ resource "aws_lambda_layer_version" "data_processing" {
 
   compatible_runtimes = ["python3.12"]
   description         = "Pydantic and Polars layer for data processing (${var.environment})"
+  skip_destroy        = true
 
   lifecycle {
     create_before_destroy = true

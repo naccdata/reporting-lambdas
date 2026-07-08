@@ -15,6 +15,11 @@ lambda_timeout     = 900  # 15 minutes
 lambda_memory_size = 3008 # 3GB
 log_retention_days = 7    # Shorter retention for dev
 
+# Scheduled Execution
+# No schedule for dev (invoke manually)
+max_files_per_run   = 5000 # Smaller cap for dev/testing
+schedule_expression = ""
+
 # Layer Management
 # First deployment: create new layers
 reuse_existing_layers   = false
