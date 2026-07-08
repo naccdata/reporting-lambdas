@@ -160,7 +160,7 @@ class Checkpoint:
                 nulls_equal=True,
             )
             # Combine preserved existing + deduplicated new
-            merged_df = concat([preserved_df, new_df])
+            merged_df = concat([preserved_df, new_df], how="diagonal")
 
         # Deterministic sort
         merged_df = merged_df.sort(["timestamp", "ptid", "action"])
