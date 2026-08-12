@@ -13,7 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 PTID_PATTERN = r"^[!-~]{1,10}$"  # printable non-whitespace characters
 
 # Type definitions
-VisitEventType = Literal["submit", "delete", "not-pass-qc", "pass-qc"]
+VisitEventType = Literal[
+    "submit", "duplicate-submit", "delete", "not-pass-qc", "pass-qc"
+]
 
 DatatypeNameType = Literal[
     "apoe",
