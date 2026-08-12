@@ -16,9 +16,9 @@ lambda_memory_size = 3008 # 3GB
 log_retention_days = 90   # Longer retention for production
 
 # Scheduled Execution
-# Runs daily at 10:00 AM UTC (2-3 AM Pacific, 5-6 AM Eastern)
+# Runs daily at 6:59 AM UTC (11:59 PM Pacific, 2:59 AM Eastern)
 max_files_per_run   = 25000
-schedule_expression = "cron(0 10 * * ? *)"
+schedule_expression = "cron(59 6 * * ? *)"
 
 # Layer Management
 # IMPORTANT: For first deployment, set reuse_existing_layers = false
