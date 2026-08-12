@@ -66,6 +66,7 @@ class TestCheckpoint:
                 visit_date="2024-01-16",
                 visit_number="02",
                 datatype="dicom",
+                modality="MR",
                 timestamp=datetime(2024, 1, 16, 9, 0, 0, tzinfo=timezone.utc),
             ),
         ]
@@ -321,11 +322,13 @@ class TestCheckpoint:
             "center_label",
             "gear_name",
             "ptid",
+            "naccid",
             "visit_date",
             "visit_number",
             "datatype",
             "module",
             "packet",
+            "modality",
             "timestamp",
         ]
         assert list(df.columns) == expected_columns
@@ -354,11 +357,13 @@ class TestCheckpoint:
             "center_label",
             "gear_name",
             "ptid",
+            "naccid",
             "visit_date",
             "visit_number",
             "datatype",
             "module",
             "packet",
+            "modality",
             "timestamp",
         ]
         assert list(df.columns) == expected_columns
@@ -405,6 +410,7 @@ class TestCheckpoint:
             visit_date="2024-01-15",
             visit_number=None,  # Null optional field
             datatype="dicom",
+            modality="MR",
             module=None,  # Null optional field
             packet=None,  # Null optional field
             timestamp=datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
@@ -499,6 +505,18 @@ def valid_visit_event_for_checkpoint(draw):
         data["module"] = draw(st.sampled_from(["UDS", "FTLD", "LBD", "MDS"]))
     else:
         data["module"] = None
+
+    # Handle modality field based on datatype
+    if datatype == "dicom":
+        data["modality"] = draw(
+            st.one_of(st.none(), st.sampled_from(["MR", "PT", "CT"]))
+        )
+    else:
+        data["modality"] = None
+
+    # packet only applies to form datatype
+    if datatype != "form":
+        data["packet"] = None
 
     return VisitEvent(**data)
 
@@ -611,11 +629,13 @@ class TestCheckpointPropertyBased:
                 "center_label",
                 "gear_name",
                 "ptid",
+                "naccid",
                 "visit_date",
                 "visit_number",
                 "datatype",
                 "module",
                 "packet",
+                "modality",
                 "timestamp",
             ]
             assert list(merged_df.columns) == expected_columns
@@ -797,16 +817,19 @@ class TestCheckpointPropertyBased:
                     # First event - minimal data
                     module = None
                     packet = None
+                    modality = "MR"
                     datatype = "dicom"  # Non-form datatype so module must be None
                 elif i == 1:
                     # Second event - some data filled in
                     module = None
-                    packet = "I" if i % 2 == 0 else "F"
+                    packet = None
+                    modality = "PT"
                     datatype = "dicom"
                 else:
                     # Later events - more complete data
                     module = "UDS" if i % 2 == 0 else "MDS"
                     packet = "I" if i % 2 == 0 else "F"
+                    modality = None
                     datatype = "form"  # Form datatype allows module
 
                 # Sometimes create identical events (same content, different timestamp)
@@ -826,6 +849,7 @@ class TestCheckpointPropertyBased:
                     datatype=datatype,
                     module=module,
                     packet=packet,
+                    modality=modality,
                     timestamp=event_timestamp,
                 )
                 all_events.append(event)
@@ -934,11 +958,13 @@ class TestCheckpointPropertyBased:
             "center_label",
             "gear_name",
             "ptid",
+            "naccid",
             "visit_date",
             "visit_number",
             "datatype",
             "module",
             "packet",
+            "modality",
             "timestamp",
         ]
         assert list(df.columns) == expected_columns
@@ -1203,18 +1229,21 @@ class TestCheckpointPropertyBased:
                     # First event - minimal required data only
                     module = None
                     packet = None
+                    modality = "MR"
                     datatype = "dicom"  # Non-form datatype so module must be None
                     action = "submit"
                 elif i == 1:
                     # Second event - some optional fields filled
                     module = None
-                    packet = "I"
+                    packet = None
+                    modality = "PT"
                     datatype = "dicom"
                     action = "submit"  # Same action, more complete data
                 else:
                     # Later events - most complete data
                     module = "UDS" if i % 2 == 0 else "MDS"
                     packet = "I" if i % 2 == 0 else "F"
+                    modality = None
                     datatype = "form"  # Form datatype allows module
                     action = "pass-qc" if i >= 2 else "submit"
 
@@ -1231,6 +1260,7 @@ class TestCheckpointPropertyBased:
                     datatype=datatype,
                     module=module,
                     packet=packet,
+                    modality=modality,
                     timestamp=event_timestamp,
                 )
                 all_events.append(event)
@@ -1370,11 +1400,13 @@ class TestCheckpointPropertyBased:
             "center_label",
             "gear_name",
             "ptid",
+            "naccid",
             "visit_date",
             "visit_number",
             "datatype",
             "module",
             "packet",
+            "modality",
             "timestamp",
         ]
         assert list(df.columns) == expected_columns, (

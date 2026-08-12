@@ -29,6 +29,10 @@ class S3EventRetriever:
     - Retrieving and validating events as VisitEvent domain objects
     - Collecting validation errors for logging
     - Limiting files per invocation to ensure progress within timeouts
+
+    Files are sorted by S3 LastModified (oldest first) before applying
+    the max_files cap, ensuring monotonic progress through the file set
+    and a safe high-water mark for subsequent runs.
     """
 
     # Default pattern:
@@ -55,7 +59,8 @@ class S3EventRetriever:
         Args:
             bucket: S3 bucket name
             prefix: Optional S3 prefix to filter paths
-            since_timestamp: Only retrieve events with timestamp > this value
+            since_timestamp: Only retrieve files with LastModified >= this
+                value. Used as a high-water mark from previous runs.
             file_pattern: Optional regex pattern for matching files
                           (default DEFAULT_PATTERN)
             max_workers: Max concurrent S3 fetch threads
@@ -71,18 +76,24 @@ class S3EventRetriever:
         self.file_pattern = file_pattern or self.DEFAULT_PATTERN
         self.max_workers = max_workers or self.DEFAULT_MAX_WORKERS
         self.max_files = max_files
+        self.max_last_modified: Optional[datetime] = None
 
     def list_event_files(self) -> List[str]:
         """List event files matching the configured pattern.
 
-        Paginates through S3 results, filtering by the file pattern and
-        by S3 LastModified date when a since_timestamp is configured.
-        Stops after collecting max_files matching files (when configured)
-        to bound work per invocation.
+        Paginates through all S3 results, filtering by the file pattern
+        and by S3 LastModified when a since_timestamp is configured.
+        Results are sorted by LastModified ascending, then capped at
+        max_files. This ensures the cap takes the oldest-uploaded files
+        first, allowing the high-water mark to advance monotonically.
+
+        After this method returns, `self.max_last_modified` is set to the
+        LastModified of the last file in the returned list (the highest
+        LastModified among files that will be processed this run).
 
         Returns:
-            List of S3 keys matching the configured file pattern,
-            up to max_files entries if a cap is configured
+            List of S3 keys sorted by LastModified ascending,
+            up to max_files entries if a cap is configured.
 
         Raises:
             ClientError: If S3 access fails
@@ -90,7 +101,8 @@ class S3EventRetriever:
         s3_client = boto3.client("s3")
         paginator = s3_client.get_paginator("list_objects_v2")
 
-        matching_files: List[str] = []
+        # Collect all matching (key, LastModified) pairs
+        matching_files: List[Tuple[str, datetime]] = []
 
         for page in paginator.paginate(Bucket=self.bucket, Prefix=self.prefix):
             if "Contents" not in page:
@@ -100,33 +112,41 @@ class S3EventRetriever:
                 if not self.file_pattern.match(key):
                     continue
 
-                # Use S3 LastModified as a cheap pre-filter to skip
-                # files that were uploaded before the cutoff timestamp.
-                # This is safe because a file cannot be uploaded before
-                # the event it contains occurred, so LastModified is
-                # always >= the event timestamp inside.  We use strict
-                # less-than so boundary cases are still downloaded and
-                # validated after parsing.
-                if self.since_timestamp is not None:
-                    last_modified = obj["LastModified"]
-                    # LastModified is timezone-aware (UTC) from boto3
-                    if last_modified < self.since_timestamp:
-                        continue
+                last_modified: datetime = obj["LastModified"]
 
-                matching_files.append(key)
+                # Pre-filter: skip files uploaded before the high-water
+                # mark from previous runs. Uses strict less-than so
+                # boundary cases are still included.
+                if (
+                    self.since_timestamp is not None
+                    and last_modified < self.since_timestamp
+                ):
+                    continue
 
-                if self.max_files is not None and len(matching_files) >= self.max_files:
-                    logger.warning(
-                        "File cap reached; more files may remain unprocessed",
-                        extra={
-                            "max_files": self.max_files,
-                            "bucket": self.bucket,
-                            "prefix": self.prefix,
-                        },
-                    )
-                    return matching_files
+                matching_files.append((key, last_modified))
 
-        return matching_files
+        # Sort by LastModified ascending so we process oldest first
+        matching_files.sort(key=lambda item: item[1])
+
+        # Apply cap after sorting
+        if self.max_files is not None and len(matching_files) > self.max_files:
+            logger.info(
+                "Applying file cap after LastModified sort",
+                extra={
+                    "total_matching": len(matching_files),
+                    "max_files": self.max_files,
+                    "bucket": self.bucket,
+                    "prefix": self.prefix,
+                },
+            )
+            matching_files = matching_files[: self.max_files]
+
+        # Set the high-water mark to the LastModified of the last file
+        # that will be processed this run
+        if matching_files:
+            self.max_last_modified = matching_files[-1][1]
+
+        return [key for key, _ in matching_files]
 
     def retrieve_event(self, key: str) -> VisitEvent:
         """Retrieve and validate event from S3.

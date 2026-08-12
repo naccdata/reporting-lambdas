@@ -17,7 +17,8 @@ class LambdaConfig(BaseModel):
     settings and checkpoint key template with required placeholders.
     """
 
-    bucket: str = Field(description="S3 bucket for event logs and checkpoints")
+    bucket: str = Field(description="S3 bucket containing event log files")
+    checkpoint_bucket: str = Field(description="S3 bucket for checkpoint parquet files")
     prefix: str = Field(default="", description="S3 prefix for event logs")
     checkpoint_key_template: str = Field(
         description="Template for checkpoint keys with {study} and {datatype}"

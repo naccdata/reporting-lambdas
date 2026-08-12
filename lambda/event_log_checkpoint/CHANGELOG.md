@@ -8,6 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes.
 
+## [1.2.0] - 2026-07-06
+
+### Added
+
+- Configurable `max_files` parameter on `S3EventRetriever` to cap files per invocation, enabling incremental progress within Lambda timeout
+- `MAX_FILES_PER_RUN` environment variable for tuning batch size without code changes
+- Content-based upsert deduplication in `Checkpoint.add_events()` using identity columns (action, ptid, visit_date, timestamp, datatype, module, pipeline_adcid)
+- Property-based tests for upsert completeness, correction replacement, and sort invariant
+- Integration tests for backfill and correction event scenarios
+- `EventsAddedByStudyDatatype` CloudWatch metric showing net new events after dedup
+- Separate `CHECKPOINT_BUCKET` environment variable to support different source and checkpoint buckets
+
+### Changed
+
+- S3 LastModified pre-filter in `list_event_files()` skips files uploaded before the cutoff timestamp, avoiding unnecessary downloads
+- Removed per-event timestamp filtering after retrieval; deduplication now handles already-processed events via upsert semantics
+- `Checkpoint.from_events()` uses full compound sort (timestamp, ptid, action) matching `add_events` ordering
+- File cap is opt-in (defaults to None / no cap) with a warning log when reached
+- `LambdaConfig` now has a `checkpoint_bucket` field; `CheckpointStore` uses it instead of the source bucket
+- Terraform conditionally sets `MAX_FILES_PER_RUN` env var only when > 0
+
+### Fixed
+
+- Lambda timeout caused by listing and downloading all event files regardless of age
+- Checkpoint bucket mismatch: Lambda code now reads `CHECKPOINT_BUCKET` env var (set by Terraform) instead of reusing the source bucket for checkpoint storage
+
 ## [1.1.0] - 2026-03-18
 
 ### Added

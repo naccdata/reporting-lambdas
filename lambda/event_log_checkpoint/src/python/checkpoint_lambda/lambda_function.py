@@ -1,9 +1,7 @@
 import os
 import time
-from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
-import boto3
 from aws_lambda_powertools import Logger, Metrics, Tracer
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from botocore.exceptions import ClientError
@@ -13,62 +11,13 @@ from checkpoint_lambda.checkpoint_store import CheckpointError, CheckpointStore
 from checkpoint_lambda.config import LambdaConfig
 from checkpoint_lambda.event_filter import EventFilter
 from checkpoint_lambda.event_grouper import EventGrouper
+from checkpoint_lambda.processing_state import ProcessingState
 from checkpoint_lambda.s3_retriever import S3EventRetriever
 
 # Initialize Lambda Powertools components
 logger = Logger()
 tracer = Tracer()
 metrics = Metrics(namespace="EventLogCheckpoint")
-
-
-def _find_earliest_checkpoint_timestamp(
-    bucket: str,
-    checkpoint_prefix: str,
-) -> Optional[datetime]:
-    """Scan existing checkpoint files to find the earliest last-processed
-    timestamp.
-
-    This is used as a global cutoff for the S3 retriever so that
-    already-processed files are skipped at fetch time rather than
-    being downloaded and filtered per-group.
-
-    Args:
-        bucket: S3 bucket containing checkpoints
-        checkpoint_prefix: S3 prefix under which checkpoint parquets live
-
-    Returns:
-        The minimum last_processed_timestamp across all checkpoints,
-        or None if no checkpoints exist.
-    """
-    s3_client = boto3.client("s3")
-    paginator = s3_client.get_paginator("list_objects_v2")
-
-    earliest: Optional[datetime] = None
-
-    try:
-        for page in paginator.paginate(Bucket=bucket, Prefix=checkpoint_prefix):
-            if "Contents" not in page:
-                continue
-            for obj in page["Contents"]:
-                key = obj["Key"]
-                if not key.endswith(".parquet"):
-                    continue
-                try:
-                    store = CheckpointStore(bucket, key)
-                    checkpoint = store.load()
-                    if checkpoint is None:
-                        continue
-                    ts = checkpoint.get_last_processed_timestamp()
-                    if ts is not None and (earliest is None or ts < earliest):
-                        earliest = ts
-                except (CheckpointError, ClientError, OSError):
-                    # Skip unreadable checkpoints
-                    continue
-    except ClientError:
-        # If we can't list checkpoints, fall back to no filtering
-        return None
-
-    return earliest
 
 
 @tracer.capture_lambda_handler
@@ -117,6 +66,7 @@ def lambda_handler(  # noqa: C901
         max_files_env = os.environ.get("MAX_FILES_PER_RUN")
         config = LambdaConfig(
             bucket=os.environ.get("BUCKET", ""),
+            checkpoint_bucket=os.environ.get("CHECKPOINT_BUCKET", ""),
             prefix=os.environ.get("PREFIX", ""),
             checkpoint_key_template=os.environ.get("CHECKPOINT_KEY_TEMPLATE", ""),
             max_files_per_run=int(max_files_env) if max_files_env else None,
@@ -145,19 +95,30 @@ def lambda_handler(  # noqa: C901
         "Configuration loaded",
         extra={
             "bucket": config.bucket,
+            "checkpoint_bucket": config.checkpoint_bucket,
             "prefix": config.prefix,
             "checkpoint_key_template": config.checkpoint_key_template,
         },
     )
 
-    # Determine global cutoff timestamp from existing checkpoints
-    # This avoids fetching files that have already been processed
-    checkpoint_prefix = config.checkpoint_key_template.split("{")[0]
-    global_since = _find_earliest_checkpoint_timestamp(config.bucket, checkpoint_prefix)
+    # Determine global cutoff from processing state file.
+    # This is the max LastModified of all files successfully processed
+    # in previous runs — files older than this are skipped.
+    state_key = config.checkpoint_key_template.split("{")[0] + "processing_state.json"
+    processing_state = ProcessingState(config.checkpoint_bucket, state_key)
+
+    try:
+        global_since = processing_state.read()
+    except (ClientError, ValueError) as e:
+        logger.warning(
+            "Could not read processing state; proceeding without cutoff",
+            extra={"error": str(e)},
+        )
+        global_since = None
 
     if global_since:
         logger.info(
-            "Using global timestamp cutoff for retrieval",
+            "Using LastModified high-water mark for retrieval",
             extra={"since_timestamp": global_since.isoformat()},
         )
 
@@ -295,7 +256,7 @@ def lambda_handler(  # noqa: C901
             checkpoint_key = key_template.generate_key(study, datatype)
 
             # Initialize CheckpointStore for this group
-            checkpoint_store = CheckpointStore(config.bucket, checkpoint_key)
+            checkpoint_store = CheckpointStore(config.checkpoint_bucket, checkpoint_key)
 
             # Load existing checkpoint
             checkpoint = checkpoint_store.get_checkpoint()
@@ -455,6 +416,19 @@ def lambda_handler(  # noqa: C901
 
     # Calculate execution time
     execution_time_ms = int((time.time() - start_time) * 1000)
+
+    # Advance the high-water mark if we processed files successfully.
+    # Only write if at least one group succeeded and the retriever
+    # has a max_last_modified (i.e., files were listed).
+    if successful_groups and event_retriever.max_last_modified is not None:
+        try:
+            processing_state.write(event_retriever.max_last_modified)
+        except ClientError as e:
+            # Non-fatal: next run will just reprocess some files
+            logger.warning(
+                "Failed to update processing state high-water mark",
+                extra={"error": str(e)},
+            )
 
     # Log processing summary
     logger.info(

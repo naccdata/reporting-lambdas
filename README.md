@@ -61,6 +61,8 @@ The devcontainer CLI requires Docker to be installed and running:
 
 Ensure Docker is running before using the dev container scripts.
 
+> **macOS file sharing**: Set Docker Desktop to use **gRPC FUSE** instead of VirtioFS for file sharing. Go to **Settings → General → Virtual Machine Options** and select gRPC FUSE. This avoids a [known Pants issue](https://github.com/pantsbuild/pants/issues/19826) where VirtioFS causes spurious permission errors when building packages (e.g., `IntrinsicError: Error setting permissions on file at .../powertools.zip: Permission denied (os error 13)`). After changing this setting, rebuild the dev container.
+
 ### Quick Start
 
 Once the devcontainer CLI is installed:

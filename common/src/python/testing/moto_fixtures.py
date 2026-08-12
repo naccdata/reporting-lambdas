@@ -99,9 +99,9 @@ def lambda_config_env(setup_s3_environment):
     """Configure Lambda environment variables for testing.
 
     This fixture sets up the Lambda configuration environment variables
-    (BUCKET, PREFIX, CHECKPOINT_KEY_TEMPLATE) and restores them after
-    the test. It depends on setup_s3_environment to ensure AWS
-    credentials are configured.
+    (BUCKET, CHECKPOINT_BUCKET, PREFIX, CHECKPOINT_KEY_TEMPLATE) and
+    restores them after the test. It depends on setup_s3_environment to
+    ensure AWS credentials are configured.
 
     By default, uses a template that supports study-datatype grouping.
     Tests can override these by setting environment variables before
@@ -109,12 +109,16 @@ def lambda_config_env(setup_s3_environment):
     """
     # Store original environment variables
     original_bucket = os.environ.get("BUCKET")
+    original_checkpoint_bucket = os.environ.get("CHECKPOINT_BUCKET")
     original_prefix = os.environ.get("PREFIX")
     original_template = os.environ.get("CHECKPOINT_KEY_TEMPLATE")
 
     # Set default Lambda configuration
     # Note: Tests should override BUCKET as needed
     os.environ["BUCKET"] = os.environ.get("BUCKET", "test-default-bucket")
+    os.environ["CHECKPOINT_BUCKET"] = os.environ.get(
+        "CHECKPOINT_BUCKET", "test-default-bucket"
+    )
     os.environ["PREFIX"] = os.environ.get("PREFIX", "")
     os.environ["CHECKPOINT_KEY_TEMPLATE"] = os.environ.get(
         "CHECKPOINT_KEY_TEMPLATE",
@@ -128,6 +132,11 @@ def lambda_config_env(setup_s3_environment):
         os.environ["BUCKET"] = original_bucket
     else:
         os.environ.pop("BUCKET", None)
+
+    if original_checkpoint_bucket is not None:
+        os.environ["CHECKPOINT_BUCKET"] = original_checkpoint_bucket
+    else:
+        os.environ.pop("CHECKPOINT_BUCKET", None)
 
     if original_prefix is not None:
         os.environ["PREFIX"] = original_prefix

@@ -53,6 +53,7 @@ class VisitEvent(BaseModel):
         pattern=PTID_PATTERN,
         description="Participant ID",
     )
+    naccid: Optional[str] = Field(default=None, description="NACC ID - optional")
     visit_date: str = Field(
         pattern=r"^\d{4}-\d{2}-\d{2}$",
         description="Visit date in ISO format YYYY-MM-DD",
@@ -62,9 +63,14 @@ class VisitEvent(BaseModel):
     )
     datatype: DatatypeNameType = Field(description="Data type")
     module: Optional[ModuleName] = Field(
-        default=None, description="Module name - optional"
+        default=None, description="Module name - form datatype only"
     )
-    packet: Optional[str] = Field(default=None, description="Packet type - optional")
+    packet: Optional[str] = Field(
+        default=None, description="Packet type - form datatype only"
+    )
+    modality: Optional[str] = Field(
+        default=None, description="Imaging modality - dicom datatype only"
+    )
     timestamp: datetime = Field(description="When action occurred (ISO 8601 datetime)")
 
     @field_validator("timestamp", mode="after")
@@ -89,24 +95,31 @@ class VisitEvent(BaseModel):
             return v.astimezone(timezone.utc)
 
     @model_validator(mode="after")
-    def validate_module(self) -> Self:
-        """Validate module field based on datatype.
+    def validate_datatype_fields(self) -> Self:
+        """Validate datatype-specific fields.
 
         Rules:
-        - If datatype != "form" and module is not None: raise error
-        - If datatype == "form" and module is None: raise error
+        - form: module required, modality must be None
+        - dicom: module must be None
+        - other: module must be None
 
         Returns:
             Self: Validated instance
 
         Raises:
-            ValueError: If module validation fails
+            ValueError: If datatype-specific validation fails
         """
-        if self.datatype != "form" and self.module is not None:
-            raise ValueError(
-                f"Visit event has datatype {self.datatype}, "
-                f"but has form module {self.module}"
-            )
-        if self.datatype == "form" and self.module is None:
-            raise ValueError("Expected module name for form datatype")
+        if self.datatype == "form":
+            if self.module is None:
+                raise ValueError("Expected module name for form datatype")
+            if self.modality is not None:
+                raise ValueError(
+                    f"Visit event has datatype 'form' but has modality {self.modality}"
+                )
+        else:
+            if self.module is not None:
+                raise ValueError(
+                    f"Visit event has datatype {self.datatype}, "
+                    f"but has form module {self.module}"
+                )
         return self

@@ -33,11 +33,13 @@ def create_checkpoint_dataframe() -> DataFrame:
             "center_label": Utf8,
             "gear_name": Utf8,
             "ptid": Utf8,
+            "naccid": Utf8,
             "visit_date": Utf8,
             "visit_number": Utf8,
             "datatype": Utf8,
             "module": Utf8,
             "packet": Utf8,
+            "modality": Utf8,
             "timestamp": Datetime("us", time_zone="UTC"),
         }
     )
@@ -58,17 +60,14 @@ def events_to_dataframe(events: List[VisitEvent]) -> DataFrame:
     # Convert VisitEvent objects to DataFrame using model_dump()
     data = [event.model_dump() for event in events]
 
-    # Create DataFrame - Polars correctly infers timezone-aware datetimes from Pydantic
-    df = DataFrame(data)
+    # Use explicit schema to avoid inference failures when Optional fields
+    # (naccid, visit_number, etc.) are None for the first N rows and Polars
+    # infers Null type, then encounters a string value later in the batch.
+    target_schema = create_checkpoint_dataframe().schema
 
-    # Get the expected schema from empty checkpoint
-    empty_df = create_checkpoint_dataframe()
+    df = DataFrame(data, schema=target_schema)
 
-    # Cast all columns to match the expected schema
-    # Polars handles timezone-aware datetime casting correctly
-    return df.select(
-        [col(column_name).cast(dtype) for column_name, dtype in empty_df.schema.items()]
-    )
+    return df
 
 
 class Checkpoint:
@@ -158,7 +157,7 @@ class Checkpoint:
                 nulls_equal=True,
             )
             # Combine preserved existing + deduplicated new
-            merged_df = concat([preserved_df, new_df])
+            merged_df = concat([preserved_df, new_df], how="diagonal")
 
         # Deterministic sort
         merged_df = merged_df.sort(["timestamp", "ptid", "action"])

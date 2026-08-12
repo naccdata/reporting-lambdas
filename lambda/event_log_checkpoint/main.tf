@@ -46,10 +46,22 @@ resource "aws_lambda_layer_version" "powertools" {
 
   compatible_runtimes = ["python3.12"]
   description         = "AWS Lambda Powertools layer for event log checkpoint function (${var.environment})"
+  skip_destroy        = true
 
   lifecycle {
     create_before_destroy = true
   }
+}
+
+resource "aws_s3_object" "data_processing_layer_zip" {
+  count  = var.use_external_layer_arns ? 0 : (
+    var.reuse_existing_layers && length(data.aws_lambda_layer_version.data_processing) > 0 && !var.force_layer_update ? 0 : 1
+  )
+
+  bucket = var.checkpoint_bucket
+  key    = "lambda-layers/event-log-checkpoint-data-processing-${var.environment}.zip"
+  source = "../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/data_processing.zip"
+  etag   = filemd5("../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/data_processing.zip")
 }
 
 resource "aws_lambda_layer_version" "data_processing" {
@@ -57,12 +69,14 @@ resource "aws_lambda_layer_version" "data_processing" {
     var.reuse_existing_layers && length(data.aws_lambda_layer_version.data_processing) > 0 && !var.force_layer_update ? 0 : 1
   )
 
-  filename         = "../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/data_processing.zip"
+  s3_bucket        = aws_s3_object.data_processing_layer_zip[0].bucket
+  s3_key           = aws_s3_object.data_processing_layer_zip[0].key
   layer_name       = "event-log-checkpoint-data-processing-${var.environment}"
   source_code_hash = filebase64sha256("../../dist/lambda.event_log_checkpoint.src.python.checkpoint_lambda/data_processing.zip")
 
   compatible_runtimes = ["python3.12"]
   description         = "Pydantic and Polars layer for data processing (${var.environment})"
+  skip_destroy        = true
 
   lifecycle {
     create_before_destroy = true

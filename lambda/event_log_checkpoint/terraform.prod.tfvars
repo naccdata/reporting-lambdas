@@ -16,13 +16,14 @@ lambda_memory_size = 3008 # 3GB
 log_retention_days = 90   # Longer retention for production
 
 # Scheduled Execution
-# Runs every Friday at 10:00 AM UTC (2-3 AM Pacific, 5-6 AM Eastern)
-schedule_expression = "cron(0 10 ? * FRI *)"
+# Runs daily at 6:59 AM UTC (11:59 PM Pacific, 2:59 AM Eastern)
+max_files_per_run   = 25000
+schedule_expression = "cron(59 6 * * ? *)"
 
 # Layer Management
 # IMPORTANT: For first deployment, set reuse_existing_layers = false
 # After first deployment, change to true for faster deployments
-reuse_existing_layers   = false # Set to true after first deployment
+reuse_existing_layers   = true
 use_external_layer_arns = false
 force_layer_update      = false
 
@@ -33,7 +34,7 @@ alarm_sns_topic_arn = ""
 
 # Event Log Filtering
 # Optional: filter to specific date range
-# event_log_prefix = "logs/"
+event_log_prefix = "prod/"
 
 # S3 Lifecycle Management
 # Production: Full archival strategy with long-term retention
