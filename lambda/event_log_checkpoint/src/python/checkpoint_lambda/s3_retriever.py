@@ -14,9 +14,8 @@ from typing import List, Optional, Tuple, Union
 
 import boto3
 from botocore.exceptions import ClientError
-from pydantic import ValidationError
-
 from checkpoint_lambda.models import VisitEvent
+from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +38,7 @@ class S3EventRetriever:
     #  log-{action}-{YYYYMMDD-HHMMSS}-{adcid}-{project}-{ptid}-{visit_date}.json
     #  where visit_date is YYYY-MM-DD
     DEFAULT_PATTERN = re.compile(
-        r"^.*log-(submit|pass-qc|not-pass-qc|delete)"
+        r"^.*log-(submit|duplicate-submit|pass-qc|not-pass-qc|delete)"
         r"-\d{8}-\d{6}-\d+-[\w\-]+-[\w]+-\d{4}-\d{2}-\d{2}\.json$"
     )
 
