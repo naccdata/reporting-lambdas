@@ -170,6 +170,27 @@ class TestListEventFiles:
         # Sort both lists to avoid order dependency
         assert sorted(files) == sorted(expected_files)
 
+    def test_list_event_files_default_pattern_punctuated_ptid(
+        self, s3_client, setup_s3_environment
+    ):
+        """PTIDs with punctuation (e.g. '1.23456') must not be dropped
+        at listing time."""
+        bucket = "test-bucket-punctuated-ptid"
+        s3_client.create_bucket(Bucket=bucket)
+
+        test_files = [
+            "prod/log-submit-20250320-101500-6-ingest-form-1.23456-2025-03-17.json",
+            "prod/log-pass-qc-20250320-101600-6-ingest-form-1.23456-2025-03-17.json",
+            "prod/log-submit-20250320-101700-6-ingest-form-AB-12.3-2025-03-17.json",
+            "prod/log-submit-20250320-101800-6-ingest-form-123456-2025-03-17.json",
+        ]
+        for file_key in test_files:
+            s3_client.put_object(Bucket=bucket, Key=file_key, Body=b"test content")
+
+        files = S3EventRetriever(bucket).list_event_files()
+
+        assert sorted(files) == sorted(test_files)
+
     def test_list_event_files_s3_error(self, setup_s3_environment):
         """Test handling S3 access errors during file listing."""
         # Use non-existent bucket to trigger S3 error
