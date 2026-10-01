@@ -86,7 +86,8 @@ def process_data(event: REDCapProcessingInputEvent) -> REDCapProcessingResult:
         records = get_redcap_records(event.parameter_path, event.report_id)
         # REDCap API returns str when exp_format="csv"
         assert isinstance(records, str), "Expected CSV string from REDCap API"
-        df_lazy = pl.scan_csv(io.StringIO(records), infer_schema_length=10000)
+        # infer from all rows
+        df_lazy = pl.scan_csv(io.StringIO(records), infer_schema_length=None)
         df = df_lazy.collect()
 
         if existing_df is not None:
