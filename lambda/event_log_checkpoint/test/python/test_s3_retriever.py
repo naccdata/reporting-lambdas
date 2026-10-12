@@ -173,8 +173,8 @@ class TestListEventFiles:
     def test_list_event_files_default_pattern_punctuated_ptid(
         self, s3_client, setup_s3_environment
     ):
-        """PTIDs with punctuation (e.g. '1.23456') must not be dropped
-        at listing time."""
+        """PTIDs with punctuation (e.g. '1.23456') must not be dropped at
+        listing time."""
         bucket = "test-bucket-punctuated-ptid"
         s3_client.create_bucket(Bucket=bucket)
 

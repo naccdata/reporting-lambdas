@@ -14,8 +14,9 @@ from typing import List, Optional, Tuple, Union
 
 import boto3
 from botocore.exceptions import ClientError
-from checkpoint_lambda.models import VisitEvent
 from pydantic import ValidationError
+
+from checkpoint_lambda.models import VisitEvent
 
 logger = logging.getLogger(__name__)
 
