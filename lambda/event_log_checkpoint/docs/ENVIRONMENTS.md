@@ -24,7 +24,7 @@ Each environment has its own `.tfvars` file:
 
 - Log level: `DEBUG` (verbose logging)
 - Log retention: 7 days (cost optimization)
-- S3 buckets: `nacc-event-logs-dev`, `nacc-checkpoints-dev`
+- S3 bucket: `submission-events` (event logs and checkpoints), checkpoints under `dev/checkpoints/`
 - Alerts: Optional (can be disabled)
 - Resource naming: `event-log-checkpoint-dev`
 
@@ -43,7 +43,7 @@ Each environment has its own `.tfvars` file:
 
 - Log level: `INFO` (standard logging)
 - Log retention: 30 days (standard retention)
-- S3 buckets: `nacc-event-logs-staging`, `nacc-checkpoints-staging`
+- S3 bucket: `submission-events` (event logs and checkpoints), checkpoints under `staging/checkpoints/`
 - Alerts: Recommended (test alert delivery)
 - Resource naming: `event-log-checkpoint-staging`
 
@@ -62,7 +62,7 @@ Each environment has its own `.tfvars` file:
 
 - Log level: `INFO` (standard logging)
 - Log retention: 90 days (compliance/audit)
-- S3 buckets: `nacc-event-logs-prod`, `nacc-checkpoints-prod`
+- S3 bucket: `submission-events` (event logs and checkpoints), checkpoints under `prod/checkpoints/`
 - Alerts: **Required** (must configure SNS topic)
 - Resource naming: `event-log-checkpoint-prod`
 - Additional tags: `Criticality = "high"`
@@ -213,9 +213,10 @@ Each environment sets these Lambda environment variables:
 
 | Variable | Dev | Staging | Prod |
 |----------|-----|---------|------|
-| `SOURCE_BUCKET` | `nacc-event-logs-dev` | `nacc-event-logs-staging` | `nacc-event-logs-prod` |
-| `CHECKPOINT_BUCKET` | `nacc-checkpoints-dev` | `nacc-checkpoints-staging` | `nacc-checkpoints-prod` |
-| `CHECKPOINT_KEY` | `checkpoints/events.parquet` | `checkpoints/events.parquet` | `checkpoints/events.parquet` |
+| `BUCKET` | `submission-events` | `submission-events` | `submission-events` |
+| `PREFIX` | `dev/` | `""` | `prod/` |
+| `CHECKPOINT_BUCKET` | `submission-events` | `submission-events` | `submission-events` |
+| `CHECKPOINT_KEY_TEMPLATE` | `dev/checkpoints/{study}/{datatype}/events.parquet` | `staging/checkpoints/{study}/{datatype}/events.parquet` | `prod/checkpoints/{study}/{datatype}/events.parquet` |
 | `LOG_LEVEL` | `DEBUG` | `INFO` | `INFO` |
 | `ENVIRONMENT` | `dev` | `staging` | `prod` |
 | `POWERTOOLS_SERVICE_NAME` | `event-log-checkpoint-dev` | `event-log-checkpoint-staging` | `event-log-checkpoint-prod` |
