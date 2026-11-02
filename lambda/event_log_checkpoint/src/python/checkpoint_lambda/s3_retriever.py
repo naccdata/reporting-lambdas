@@ -14,8 +14,9 @@ from typing import List, Optional, Tuple, Union
 
 import boto3
 from botocore.exceptions import ClientError
-from checkpoint_lambda.models import VisitEvent
 from pydantic import ValidationError
+
+from checkpoint_lambda.models import VisitEvent
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,11 @@ class S3EventRetriever:
     # Default pattern:
     #  log-{action}-{YYYYMMDD-HHMMSS}-{adcid}-{project}-{ptid}-{visit_date}.json
     #  where visit_date is YYYY-MM-DD
+    # ptid is any non-slash run: PTIDs may contain '.' (e.g. 1.23456),
+    # and VisitEvent validates the real ptid from the file body.
     DEFAULT_PATTERN = re.compile(
         r"^.*log-(submit|duplicate-submit|pass-qc|not-pass-qc|delete)"
-        r"-\d{8}-\d{6}-\d+-[\w\-]+-[\w]+-\d{4}-\d{2}-\d{2}\.json$"
+        r"-\d{8}-\d{6}-\d+-[\w\-]+-[^/]+-\d{4}-\d{2}-\d{2}\.json$"
     )
 
     DEFAULT_MAX_WORKERS = 50
