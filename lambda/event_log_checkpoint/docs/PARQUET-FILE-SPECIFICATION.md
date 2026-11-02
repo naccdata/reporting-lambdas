@@ -8,13 +8,12 @@ The Event Log Checkpoint Lambda creates a consolidated **checkpoint parquet file
 
 ### S3 Configuration
 
-- **S3 Bucket**: Configurable via `CHECKPOINT_BUCKET` environment variable
-  - Dev: `nacc-checkpoints-dev`
-  - Staging: `nacc-checkpoints-staging`
-  - Production: `nacc-checkpoints-prod`
-- **S3 Key**: Configurable via `CHECKPOINT_KEY` environment variable
-  - Default: `checkpoints/events.parquet`
-- **Full Path Example**: `s3://nacc-checkpoints-prod/checkpoints/events.parquet`
+- **S3 Bucket**: `submission-events` in all environments, set by the `CHECKPOINT_BUCKET` environment variable
+- **S3 Key**: set by the `CHECKPOINT_KEY_TEMPLATE` environment variable. The Lambda writes one file per study and datatype:
+  - Dev: `dev/checkpoints/{study}/{datatype}/events.parquet`
+  - Staging: `staging/checkpoints/{study}/{datatype}/events.parquet`
+  - Production: `prod/checkpoints/{study}/{datatype}/events.parquet`
+- **Full Path Example**: `s3://submission-events/prod/checkpoints/adrc/form/events.parquet`
 
 ## Schema Structure
 
@@ -286,16 +285,16 @@ Optional fields that may contain null values:
 import polars as pl
 
 # Read entire file
-df = pl.read_parquet("s3://nacc-checkpoints-prod/checkpoints/events.parquet")
+df = pl.read_parquet("s3://submission-events/prod/checkpoints/adrc/form/events.parquet")
 
 # Read specific columns only
 df = pl.read_parquet(
-    "s3://nacc-checkpoints-prod/checkpoints/events.parquet",
+    "s3://submission-events/prod/checkpoints/adrc/form/events.parquet",
     columns=["center_label", "action", "timestamp"]
 )
 
 # Read with filtering (predicate pushdown)
-df = pl.scan_parquet("s3://nacc-checkpoints-prod/checkpoints/events.parquet") \
+df = pl.scan_parquet("s3://submission-events/prod/checkpoints/adrc/form/events.parquet") \
     .filter(pl.col("center_label") == "alpha") \
     .collect()
 ```
@@ -306,11 +305,11 @@ df = pl.scan_parquet("s3://nacc-checkpoints-prod/checkpoints/events.parquet") \
 import pandas as pd
 
 # Read entire file
-df = pd.read_parquet("s3://nacc-checkpoints-prod/checkpoints/events.parquet")
+df = pd.read_parquet("s3://submission-events/prod/checkpoints/adrc/form/events.parquet")
 
 # Read specific columns
 df = pd.read_parquet(
-    "s3://nacc-checkpoints-prod/checkpoints/events.parquet",
+    "s3://submission-events/prod/checkpoints/adrc/form/events.parquet",
     columns=["center_label", "action", "timestamp"]
 )
 ```
@@ -335,7 +334,7 @@ CREATE EXTERNAL TABLE event_checkpoints (
     timestamp TIMESTAMP
 )
 STORED AS PARQUET
-LOCATION 's3://nacc-checkpoints-prod/checkpoints/';
+LOCATION 's3://submission-events/prod/checkpoints/adrc/form/';
 
 -- Query events
 SELECT center_label, action, COUNT(*) as event_count
